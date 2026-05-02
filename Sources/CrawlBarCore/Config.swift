@@ -211,17 +211,24 @@ public enum CrawlBarConfigStoreError: LocalizedError {
 public struct CrawlBarConfigStore: @unchecked Sendable {
     public var fileURL: URL
     private let fileManager: FileManager
+    private let secretStore: CrawlSecretStore
 
-    public init(fileURL: URL = Self.defaultURL(), fileManager: FileManager = .default) {
+    public init(
+        fileURL: URL = Self.defaultURL(),
+        fileManager: FileManager = .default,
+        secretStore: CrawlSecretStore = CrawlSecretStore())
+    {
         self.fileURL = fileURL
         self.fileManager = fileManager
+        self.secretStore = secretStore
     }
 
     public func load() throws -> CrawlBarConfig? {
         guard self.fileManager.fileExists(atPath: self.fileURL.path) else { return nil }
         let data = try Data(contentsOf: self.fileURL)
         do {
-            return try CrawlCoding.makeJSONDecoder().decode(CrawlBarConfig.self, from: data).normalized()
+            let config = try CrawlCoding.makeJSONDecoder().decode(CrawlBarConfig.self, from: data).normalized()
+            return self.configWithSecrets(config)
         } catch {
             throw CrawlBarConfigStoreError.decodeFailed(error.localizedDescription)
         }
@@ -238,9 +245,10 @@ public struct CrawlBarConfigStore: @unchecked Sendable {
 
     public func save(_ config: CrawlBarConfig) throws {
         let normalized = config.normalized()
+        let persisted = try self.configForDisk(normalized)
         let data: Data
         do {
-            data = try CrawlCoding.makeJSONEncoder().encode(normalized)
+            data = try CrawlCoding.makeJSONEncoder().encode(persisted)
         } catch {
             throw CrawlBarConfigStoreError.encodeFailed(error.localizedDescription)
         }
@@ -254,6 +262,41 @@ public struct CrawlBarConfigStore: @unchecked Sendable {
             [.posixPermissions: NSNumber(value: Int16(0o600))],
             ofItemAtPath: self.fileURL.path)
         #endif
+    }
+
+    private func configWithSecrets(_ config: CrawlBarConfig) -> CrawlBarConfig {
+        let manifests = self.manifestsByID(config: config)
+        var copy = config
+        for index in copy.apps.indices {
+            guard let manifest = manifests[copy.apps[index].id] else { continue }
+            for option in manifest.configOptions where option.kind == .secret {
+                guard copy.apps[index].configValues[option.id]?.nilIfBlank == nil,
+                      let value = try? self.secretStore.value(appID: copy.apps[index].id, optionID: option.id)?.nilIfBlank
+                else { continue }
+                copy.apps[index].configValues[option.id] = value
+            }
+        }
+        return copy
+    }
+
+    private func configForDisk(_ config: CrawlBarConfig) throws -> CrawlBarConfig {
+        let manifests = self.manifestsByID(config: config)
+        var copy = config
+        for index in copy.apps.indices {
+            guard let manifest = manifests[copy.apps[index].id] else { continue }
+            for option in manifest.configOptions where option.kind == .secret {
+                if let value = copy.apps[index].configValues.removeValue(forKey: option.id) {
+                    try self.secretStore.set(value.nilIfBlank, appID: copy.apps[index].id, optionID: option.id)
+                }
+            }
+        }
+        return copy
+    }
+
+    private func manifestsByID(config: CrawlBarConfig) -> [CrawlAppID: CrawlAppManifest] {
+        Dictionary(uniqueKeysWithValues: CrawlManifestCatalog(fileManager: self.fileManager)
+            .manifests(config: config)
+            .map { ($0.id, $0) })
     }
 
     public static func defaultURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {

@@ -66,6 +66,7 @@ final class CrawlBarSettingsModel: ObservableObject {
     private let registry = CrawlAppRegistry()
     private let runner: CrawlCommandRunner
     private let statusService: CrawlStatusService
+    private let nativeConfigStore = CrawlNativeConfigStore()
     private let installer = CrawlInstaller()
     private let logStore = CrawlActionLogStore()
 
@@ -80,7 +81,13 @@ final class CrawlBarSettingsModel: ObservableObject {
         do {
             let config = try self.store.loadOrCreateDefault()
             let loadedInstallations = try self.registry.installations(includeDisabled: true)
-            self.apps = config.apps
+            let manifests = Dictionary(uniqueKeysWithValues: loadedInstallations.map { ($0.id, $0.manifest) })
+            self.apps = config.apps.map { appConfig in
+                guard let manifest = manifests[appConfig.id] else { return appConfig }
+                var copy = appConfig
+                copy.configValues = self.nativeConfigStore.resolvedConfigValues(appConfig: appConfig, manifest: manifest)
+                return copy
+            }
             self.refreshFrequency = config.refreshFrequency
             self.manifestDirectories = config.manifestDirectories
             self.installations = Dictionary(uniqueKeysWithValues: loadedInstallations.map { ($0.id, $0) })
@@ -95,10 +102,12 @@ final class CrawlBarSettingsModel: ObservableObject {
 
     func save() {
         do {
-            try self.store.save(CrawlBarConfig(
+            let config = CrawlBarConfig(
                 refreshFrequency: self.refreshFrequency,
                 manifestDirectories: self.manifestDirectories,
-                apps: self.apps))
+                apps: self.apps)
+            try self.store.save(config)
+            try self.nativeConfigStore.write(config: config)
             self.load()
             self.lastError = nil
         } catch {

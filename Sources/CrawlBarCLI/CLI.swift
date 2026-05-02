@@ -212,6 +212,7 @@ enum CrawlBarCLI {
 
     private static func runConfig(_ options: CLIOptions, registry: CrawlAppRegistry) throws {
         let store = CrawlBarConfigStore()
+        let nativeConfigStore = CrawlNativeConfigStore()
         switch options.positionals.first {
         case "path":
             print(store.fileURL.path)
@@ -225,7 +226,12 @@ enum CrawlBarCLI {
             let appID = try options.requiredAppID()
             let config = try store.loadOrCreateDefault()
             let installation = try registry.installation(for: appID)
-            let appConfig = config.appConfig(for: appID) ?? CrawlBarAppConfig(id: appID)
+            let baseAppConfig = config.appConfig(for: appID) ?? CrawlBarAppConfig(id: appID)
+            let appConfig = installation.map {
+                var copy = baseAppConfig
+                copy.configValues = nativeConfigStore.resolvedConfigValues(appConfig: baseAppConfig, manifest: $0.manifest)
+                return copy
+            } ?? baseAppConfig
             let values = Self.configValues(
                 appConfig: appConfig,
                 manifest: installation?.manifest,
@@ -263,6 +269,11 @@ enum CrawlBarCLI {
                 config.apps[index].configValues[key] = value
             }
             try store.save(config)
+            if let installation = try registry.installation(for: appID),
+               let appConfig = config.appConfig(for: appID)
+            {
+                try nativeConfigStore.write(appConfig: appConfig, manifest: installation.manifest)
+            }
             if options.json {
                 try CLIOutput.writeJSON(["app_id": appID.rawValue, "key": key, "updated": "true"])
                 return

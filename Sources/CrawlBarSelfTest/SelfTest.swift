@@ -8,6 +8,7 @@ enum CrawlBarSelfTest {
         try Self.testDefaultConfigNormalizesBuiltInApps()
         try Self.testConfigStoreRoundTrips()
         try Self.testExternalManifestCatalog()
+        try Self.testNativeConfigRoundTrips()
         try Self.testStatusMapperNormalizesCounts()
         try Self.testConfigValuesReachCommandEnvironment()
         try Self.testDatabaseBackupCopiesFiles()
@@ -80,6 +81,44 @@ enum CrawlBarSelfTest {
         try Self.expect(BuiltInCrawlApps.gitcrawl.configOptions.contains { $0.id == "embedding_model" }, "built-in config options exist")
         try Self.expect(BuiltInCrawlApps.slacrawl.install?.package == "vincentkoc/tap/slacrawl", "built-in install metadata exists")
         try Self.expect(BuiltInCrawlApps.gogcli.availability == .comingSoon, "coming soon manifests are marked unavailable")
+    }
+
+    private static func testNativeConfigRoundTrips() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("crawlbar-native-config-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let configURL = directory.appendingPathComponent("config.toml")
+        try Data("""
+        [openai]
+        api_key = "from-file"
+        """.utf8).write(to: configURL)
+
+        let manifest = CrawlAppManifest(
+            id: CrawlAppID(rawValue: "tomlcrawl"),
+            displayName: "TOML Crawl",
+            description: "A TOML test crawler",
+            binary: .init(name: "tomlcrawl"),
+            branding: .init(symbolName: "terminal", accentColor: "#123456"),
+            paths: .init(defaultConfig: configURL.path),
+            commands: [:],
+            capabilities: [],
+            configOptions: [
+                .init(id: "openai_api_key", label: "OpenAI API key", kind: .secret, configKey: "openai.api_key"),
+                .init(id: "embedding_model", label: "Embedding model", kind: .choice, configKey: "embeddings.model"),
+            ])
+        var appConfig = CrawlBarAppConfig(id: manifest.id)
+        let nativeStore = CrawlNativeConfigStore()
+        try Self.expect(
+            nativeStore.resolvedConfigValues(appConfig: appConfig, manifest: manifest)["openai_api_key"] == "from-file",
+            "native TOML config values load")
+
+        appConfig.configValues["embedding_model"] = "text-embedding-3-large"
+        try nativeStore.write(appConfig: appConfig, manifest: manifest)
+        let content = try String(contentsOf: configURL, encoding: .utf8)
+        try Self.expect(content.contains("[embeddings]"), "native TOML section writes")
+        try Self.expect(content.contains("model = \"text-embedding-3-large\""), "native TOML value writes")
     }
 
     private static func testStatusMapperNormalizesCounts() throws {
