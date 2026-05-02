@@ -35,6 +35,36 @@ also expose the same payload through `metadata --json`.
     "update": ["update", "--json"]
   },
   "capabilities": ["status", "doctor", "refresh", "publish", "update"],
+  "config_options": [
+    {
+      "id": "api_token",
+      "label": "API token",
+      "kind": "secret",
+      "env_var": "EXAMPLECRAWL_TOKEN",
+      "config_key": "example.token"
+    },
+    {
+      "id": "embedding_model",
+      "label": "Embedding model",
+      "kind": "choice",
+      "default_value": "text-embedding-3-small",
+      "choices": ["text-embedding-3-small", "text-embedding-3-large"],
+      "env_var": "OPENAI_EMBEDDING_MODEL",
+      "config_key": "embeddings.model"
+    }
+  ],
+  "config_sections": [
+    {
+      "id": "access",
+      "title": "Example Access",
+      "option_ids": ["api_token"]
+    },
+    {
+      "id": "ai",
+      "title": "Embeddings",
+      "option_ids": ["embedding_model"]
+    }
+  ],
   "privacy": {
     "contains_private_messages": false,
     "exports_secrets": false,
@@ -58,10 +88,23 @@ The preferred future shape is a `crawlkit`-owned status envelope with:
 
 - `app_id`, `schema_version`, `generated_at`, `state`, and `summary`.
 - normalized counters as `{id,label,value}` rows.
+- optional `databases` rows with `id`, `label`, `kind`, `role`, `path`,
+  `is_primary`, `bytes`, `modified_at`, and optional `counts`.
 - effective config/database/cache/log/share paths from `configkit`.
 - freshness from `syncstate`.
 - share/export state from `gitshare` and `pack`.
 - warnings/errors with no secret values.
+
+## Configuration
+
+`config_options` describe editable values. `config_sections` only arrange those
+fields into native settings groups. Duplicate option IDs are ignored after the
+first entry so a broken external manifest cannot crash the settings UI.
+
+Secrets must never be emitted by `metadata --json`, and config reads should
+redact them unless an explicit reveal flag is provided. Longer term, crawler
+CLIs should expose safe config read/write/clear commands so CrawlBar can stop
+editing TOML directly.
 
 ## Actions
 

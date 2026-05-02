@@ -203,16 +203,21 @@ final class CrawlBarSettingsModel: ObservableObject {
         let logStore = self.logStore
         Task.detached {
             let message: String
+            var actionError: CrawlAppStatus?
             do {
                 let result = try runner.run(installation: installation, action: action, timeoutSeconds: 600)
                 _ = try? logStore.save(result)
                 message = result.exitCode == 0
                     ? "\(Self.actionTitle(action)) finished"
                     : "\(Self.actionTitle(action)) failed with exit \(result.exitCode)"
+                if !result.succeeded {
+                    actionError = Self.actionFailureStatus(result)
+                }
             } catch {
                 message = error.localizedDescription
+                actionError = Self.actionFailureStatus(appID: appID, action: action, message: error.localizedDescription)
             }
-            let status = statusService.status(for: installation, timeoutSeconds: 5)
+            let status = actionError ?? statusService.status(for: installation, timeoutSeconds: 5)
             await MainActor.run {
                 self.statuses[appID] = status
                 self.runningActions[appID] = nil
@@ -311,6 +316,20 @@ final class CrawlBarSettingsModel: ObservableObject {
         default:
             action
         }
+    }
+
+    nonisolated private static func actionFailureStatus(_ result: CrawlCommandResult) -> CrawlAppStatus {
+        let fallback = "\(result.action) failed with exit \(result.exitCode)"
+        let summary = result.stderr.nilIfBlank ?? result.stdout.nilIfBlank ?? fallback
+        return Self.actionFailureStatus(appID: result.appID, action: result.action, message: summary)
+    }
+
+    nonisolated private static func actionFailureStatus(appID: CrawlAppID, action: String, message: String) -> CrawlAppStatus {
+        CrawlAppStatus(
+            appID: appID,
+            state: .error,
+            summary: "\(action): \(message)",
+            errors: [message])
     }
 
     nonisolated private static func installBundledCLI() throws -> String {
@@ -878,12 +897,17 @@ struct CrawlBarAppDetailView: View {
                 HStack(spacing: 8) {
                     Text(CrawlBarCrawlerTitle.text(for: self.app.id, manifest: self.manifest))
                         .font(.title3.weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     CrawlBarStatusPill(state: self.effectiveState)
                 }
                 Text(self.manifest?.description ?? self.app.id.rawValue)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
             }
+            .frame(minWidth: 0, alignment: .leading)
             Spacer()
             HStack(spacing: 6) {
                 if !self.isComingSoon {

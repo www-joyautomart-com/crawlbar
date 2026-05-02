@@ -13,6 +13,43 @@
     "publish",
     "update"
   ],
+  "config_options": [
+    {
+      "config_key": "example.token",
+      "env_var": "EXAMPLECRAWL_TOKEN",
+      "id": "api_token",
+      "kind": "secret",
+      "label": "API token"
+    },
+    {
+      "choices": [
+        "text-embedding-3-small",
+        "text-embedding-3-large"
+      ],
+      "config_key": "embeddings.model",
+      "default_value": "text-embedding-3-small",
+      "env_var": "OPENAI_EMBEDDING_MODEL",
+      "id": "embedding_model",
+      "kind": "choice",
+      "label": "Embedding model"
+    }
+  ],
+  "config_sections": [
+    {
+      "id": "access",
+      "option_ids": [
+        "api_token"
+      ],
+      "title": "Example Access"
+    },
+    {
+      "id": "ai",
+      "option_ids": [
+        "embedding_model"
+      ],
+      "title": "Embeddings"
+    }
+  ],
   "commands": {
     "doctor": [
       "doctor",
