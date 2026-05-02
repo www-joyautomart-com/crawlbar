@@ -22,17 +22,21 @@ public struct CrawlStatusMapper: Sendable {
         }
 
         let status: CrawlAppStatus
-        switch manifest.id {
-        case BuiltInCrawlApps.gitcrawlID:
-            status = self.gitcrawlStatus(object, result: result)
-        case BuiltInCrawlApps.slacrawlID:
-            status = self.slacrawlStatus(object, result: result)
-        case BuiltInCrawlApps.discrawlID:
-            status = self.discrawlStatus(object, result: result)
-        case BuiltInCrawlApps.notcrawlID:
-            status = self.notcrawlStatus(object, result: result)
-        default:
+        if self.isCrawlKitStatus(object) {
             status = self.genericStatus(object, result: result)
+        } else {
+            switch manifest.id {
+            case BuiltInCrawlApps.gitcrawlID:
+                status = self.gitcrawlStatus(object, result: result)
+            case BuiltInCrawlApps.slacrawlID:
+                status = self.slacrawlStatus(object, result: result)
+            case BuiltInCrawlApps.discrawlID:
+                status = self.discrawlStatus(object, result: result)
+            case BuiltInCrawlApps.notcrawlID:
+                status = self.notcrawlStatus(object, result: result)
+            default:
+                status = self.genericStatus(object, result: result)
+            }
         }
         return CrawlDatabaseInventory.enrich(status, manifest: manifest)
     }
@@ -54,7 +58,7 @@ public struct CrawlStatusMapper: Sendable {
             databasePath: self.stringValue(["db_path", "database_path", "database"], in: object),
             lastSyncAt: lastSyncAt,
             counts: counts,
-            freshness: self.freshness(lastSyncAt: lastSyncAt))
+            freshness: self.freshness(in: object, lastSyncAt: lastSyncAt))
     }
 
     private func slacrawlStatus(_ object: [String: Any], result: CrawlCommandResult) -> CrawlAppStatus {
@@ -69,9 +73,10 @@ public struct CrawlStatusMapper: Sendable {
         let databases = self.databaseResources(in: object)
         let lastSyncAt = self.dateValue(["last_sync_at", "latest_message_at", "updated_at"], in: object)
             ?? self.databaseModifiedAt(databases)
+        let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt)
         return CrawlAppStatus(
             appID: result.appID,
-            state: self.statusState(in: object, lastSyncAt: lastSyncAt, fallback: .current),
+            state: self.statusState(in: object, lastSyncAt: lastSyncAt, freshness: freshness, fallback: .current),
             summary: self.stringValue(["summary", "message"], in: object) ?? self.summary(from: counts, fallback: "Slack crawl status is current"),
             configPath: self.stringValue(["config_path", "config"], in: object),
             databasePath: self.stringValue(["db_path", "database_path", "database"], in: object),
@@ -79,7 +84,7 @@ public struct CrawlStatusMapper: Sendable {
             lastSyncAt: lastSyncAt,
             counts: counts,
             databases: databases,
-            freshness: self.freshness(lastSyncAt: lastSyncAt),
+            freshness: freshness,
             share: self.shareStatus(in: object))
     }
 
@@ -97,9 +102,10 @@ public struct CrawlStatusMapper: Sendable {
         let databases = self.databaseResources(in: object)
         let lastSyncAt = self.dateValue(["last_sync_at", "latest_message_at", "updated_at"], in: object)
             ?? self.databaseModifiedAt(databases)
+        let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt)
         return CrawlAppStatus(
             appID: result.appID,
-            state: self.statusState(in: object, lastSyncAt: lastSyncAt, fallback: .current),
+            state: self.statusState(in: object, lastSyncAt: lastSyncAt, freshness: freshness, fallback: .current),
             summary: self.stringValue(["summary", "message"], in: object) ?? self.summary(from: counts, fallback: "Discord crawl status is current"),
             configPath: self.stringValue(["config_path", "config"], in: object),
             databasePath: self.stringValue(["db_path", "database_path", "database"], in: object),
@@ -107,7 +113,7 @@ public struct CrawlStatusMapper: Sendable {
             lastSyncAt: lastSyncAt,
             counts: counts,
             databases: databases,
-            freshness: self.freshness(lastSyncAt: lastSyncAt),
+            freshness: freshness,
             share: self.shareStatus(in: object))
     }
 
@@ -134,7 +140,7 @@ public struct CrawlStatusMapper: Sendable {
             walBytes: self.intValue(["wal_bytes"], in: object),
             lastSyncAt: lastSyncAt,
             counts: counts,
-            freshness: self.freshness(lastSyncAt: lastSyncAt),
+            freshness: self.freshness(in: object, lastSyncAt: lastSyncAt),
             share: self.shareStatus(in: object))
     }
 
@@ -143,17 +149,21 @@ public struct CrawlStatusMapper: Sendable {
         let databases = self.databaseResources(in: object)
         let lastSyncAt = self.dateValue(["last_sync_at", "updated_at", "generated_at"], in: object)
             ?? self.databaseModifiedAt(databases)
+        let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt)
         return CrawlAppStatus(
             appID: result.appID,
-            state: self.statusState(in: object, lastSyncAt: lastSyncAt, fallback: .current),
+            state: self.statusState(in: object, lastSyncAt: lastSyncAt, freshness: freshness, fallback: .current),
             summary: self.stringValue(["summary", "message"], in: object) ?? self.summary(from: counts, fallback: "Status is current"),
-            configPath: self.stringValue(["config_path"], in: object),
+            configPath: self.stringValue(["config_path", "config"], in: object),
             databasePath: self.stringValue(["db_path", "database_path"], in: object),
             databaseBytes: self.intValue(["db_bytes", "database_bytes"], in: object),
+            walBytes: self.intValue(["wal_bytes"], in: object),
             lastSyncAt: lastSyncAt,
+            lastImportAt: self.dateValue(["last_import_at"], in: object),
+            lastExportAt: self.dateValue(["last_export_at"], in: object),
             counts: counts,
             databases: databases,
-            freshness: self.freshness(lastSyncAt: lastSyncAt),
+            freshness: freshness,
             share: self.shareStatus(in: object))
     }
 
@@ -165,6 +175,13 @@ public struct CrawlStatusMapper: Sendable {
     private func parseObject(_ text: String) -> [String: Any]? {
         guard let data = text.data(using: .utf8), !data.isEmpty else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    private func isCrawlKitStatus(_ object: [String: Any]) -> Bool {
+        if let schema = self.stringValue(["schema_version"], in: object), schema.hasPrefix("crawlkit.control.") {
+            return true
+        }
+        return self.firstValue("databases", in: object) != nil && self.firstValue("counts", in: object) != nil
     }
 
     private func count(_ id: String, _ label: String, _ keys: [String]) -> (String, String, [String]) {
@@ -199,21 +216,39 @@ public struct CrawlStatusMapper: Sendable {
             staleAfterSeconds: staleAfterSeconds)
     }
 
+    private func freshness(in object: [String: Any], lastSyncAt: Date?) -> CrawlFreshness? {
+        if let freshness = self.firstObject(["freshness"], in: object),
+           let status = self.statusValue(["status", "state"], in: freshness)
+        {
+            return CrawlFreshness(
+                status: status,
+                ageSeconds: self.intValue(["age_seconds"], in: freshness),
+                staleAfterSeconds: self.intValue(["stale_after_seconds"], in: freshness))
+        }
+        return self.freshness(lastSyncAt: lastSyncAt)
+    }
+
     private func summary(from counts: [CrawlCount], fallback: String) -> String {
         let visible = counts.prefix(2).map { "\($0.value) \($0.label.lowercased())" }
         return visible.isEmpty ? fallback : visible.joined(separator: ", ")
     }
 
-    private func statusState(in object: [String: Any], lastSyncAt: Date?, fallback: CrawlAppState) -> CrawlAppState {
+    private func statusState(
+        in object: [String: Any],
+        lastSyncAt: Date?,
+        freshness: CrawlFreshness?,
+        fallback: CrawlAppState)
+        -> CrawlAppState
+    {
         if let rawValue = self.stringValue(["state", "status"], in: object),
            let state = CrawlAppState(rawValue: rawValue)
         {
-            if state == .current, self.state(lastSyncAt: lastSyncAt, fallback: fallback) == .stale {
+            if state == .current, freshness?.status == .stale {
                 return .stale
             }
             return state
         }
-        return self.state(lastSyncAt: lastSyncAt, fallback: fallback)
+        return freshness?.status ?? self.state(lastSyncAt: lastSyncAt, fallback: fallback)
     }
 
     private func statusCounts(in object: [String: Any], fallback: [CrawlCount]) -> [CrawlCount] {
@@ -299,6 +334,11 @@ public struct CrawlStatusMapper: Sendable {
             }
         }
         return nil
+    }
+
+    private func statusValue(_ keys: [String], in object: [String: Any]) -> CrawlAppState? {
+        guard let rawValue = self.stringValue(keys, in: object) else { return nil }
+        return CrawlAppState(rawValue: rawValue)
     }
 
     private func dateValue(_ keys: [String], in object: [String: Any]) -> Date? {
