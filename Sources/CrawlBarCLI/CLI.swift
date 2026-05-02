@@ -30,7 +30,11 @@ enum CrawlBarCLI {
         case "logs":
             try Self.printLogs(json: options.json)
         case "metadata":
-            try Self.printMetadata(registry: registry, appID: options.appID, json: options.json)
+            try Self.printMetadata(
+                registry: registry,
+                appID: options.appID,
+                json: options.json,
+                diagnostics: options.diagnostics)
         case "status":
             try Self.printStatus(registry: registry, statusService: statusService, options: options)
         case "backup":
@@ -67,7 +71,30 @@ enum CrawlBarCLI {
         }
     }
 
-    private static func printMetadata(registry: CrawlAppRegistry, appID: CrawlAppID?, json: Bool) throws {
+    private static func printMetadata(
+        registry: CrawlAppRegistry,
+        appID: CrawlAppID?,
+        json: Bool,
+        diagnostics: Bool)
+        throws
+    {
+        if diagnostics {
+            let config = try registry.loadConfig()
+            let diagnostics = CrawlManifestCatalog().diagnostics(config: config)
+            if json {
+                try CLIOutput.writeJSON(diagnostics)
+                return
+            }
+            if diagnostics.isEmpty {
+                print("ok")
+                return
+            }
+            for diagnostic in diagnostics {
+                print("warning\t\(diagnostic.path)\t\(diagnostic.message)")
+            }
+            return
+        }
+
         let installations = try registry.installations(includeDisabled: true)
         let manifests = installations
             .filter { appID == nil || $0.id == appID }
@@ -319,7 +346,7 @@ enum CrawlBarCLI {
           backup --app <id> [--json]
           folder --app <id> [--json]
           logs [--json]
-          metadata [--app <id>] [--json]
+          metadata [--app <id>] [--json] [--diagnostics]
           status [--app <id|all>] [--json]
           install --app <id> [--json]
           doctor --app <id> [--json]
@@ -386,6 +413,7 @@ private struct CLIOptions {
     var key: String?
     var value: String?
     var revealSecrets = false
+    var diagnostics = false
     var positionals: [String] = []
 
     init(_ arguments: ArraySlice<String>) {
@@ -404,6 +432,8 @@ private struct CLIOptions {
                 self.value = iterator.next()
             case "--reveal":
                 self.revealSecrets = true
+            case "--diagnostics":
+                self.diagnostics = true
             default:
                 self.positionals.append(argument)
             }
