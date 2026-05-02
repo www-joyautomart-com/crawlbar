@@ -1,4 +1,9 @@
 import Foundation
+#if os(macOS)
+import Darwin
+#elseif os(Linux)
+import Glibc
+#endif
 
 public enum CrawlCommandRunnerError: LocalizedError, Sendable {
     case executableNotFound(String)
@@ -74,6 +79,8 @@ public struct CrawlExecutableResolver: @unchecked Sendable {
 }
 
 public struct CrawlCommandRunner: @unchecked Sendable {
+    private static let timeoutTerminationGrace: DispatchTimeInterval = .milliseconds(500)
+
     private let resolver: CrawlExecutableResolver
     private let redactor: CrawlCommandRedactor
     private let fileManager: FileManager
@@ -171,6 +178,14 @@ public struct CrawlCommandRunner: @unchecked Sendable {
         let waitResult = semaphore.wait(timeout: .now() + timeoutSeconds)
         if waitResult == .timedOut {
             process.terminate()
+            #if os(macOS) || os(Linux)
+            let pid = process.processIdentifier
+            DispatchQueue.global().asyncAfter(deadline: .now() + Self.timeoutTerminationGrace) {
+                if process.isRunning {
+                    kill(pid, SIGKILL)
+                }
+            }
+            #endif
             process.waitUntilExit()
             throw CrawlCommandRunnerError.timedOut(
                 appID: appID,

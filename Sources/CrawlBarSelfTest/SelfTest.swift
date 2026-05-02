@@ -11,6 +11,7 @@ enum CrawlBarSelfTest {
         try Self.testNativeConfigRoundTrips()
         try Self.testStatusMapperNormalizesCounts()
         try Self.testConfigValuesReachCommandEnvironment()
+        try Self.testCommandTimeoutEscalates()
         try Self.testDatabaseBackupCopiesFiles()
         try Self.testRedactorScrubsSecrets()
         print("crawlbar selftest ok")
@@ -233,6 +234,39 @@ enum CrawlBarSelfTest {
             configValues: ["test_value": "from-config"])
         let result = try CrawlCommandRunner().run(installation: installation, action: "status", timeoutSeconds: 5)
         try Self.expect(result.stdout == "from-config", "config values reach crawler command environment")
+    }
+
+    private static func testCommandTimeoutEscalates() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("crawlbar-timeout-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let scriptURL = directory.appendingPathComponent("ignore-term.sh")
+        try Data("""
+        #!/bin/sh
+        trap '' TERM
+        sleep 5
+        """.utf8).write(to: scriptURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+
+        let manifest = CrawlAppManifest(
+            id: CrawlAppID(rawValue: "timeoutcrawl"),
+            displayName: "Timeout Crawl",
+            description: "A timeout test crawler",
+            binary: .init(name: scriptURL.path),
+            branding: .init(symbolName: "timer", accentColor: "#123456"),
+            paths: .init(),
+            commands: ["status": []],
+            capabilities: [.status])
+        let installation = CrawlAppInstallation(manifest: manifest, binaryPath: scriptURL.path)
+        let startedAt = Date()
+        do {
+            _ = try CrawlCommandRunner().run(installation: installation, action: "status", timeoutSeconds: 0.1)
+            throw SelfTestError.failed("timeout command should not complete")
+        } catch CrawlCommandRunnerError.timedOut {
+            try Self.expect(Date().timeIntervalSince(startedAt) < 2.5, "timed-out commands are killed promptly")
+        }
     }
 
     private static func testDatabaseBackupCopiesFiles() throws {
