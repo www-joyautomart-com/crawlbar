@@ -499,6 +499,7 @@ public struct CrawlAppInstallation: Codable, Equatable, Sendable, Identifiable {
     public var binaryPath: String?
     public var configPathOverride: String?
     public var configValues: [String: String]
+    public var staleAfterSeconds: Int?
     public var enabled: Bool
 
     public var id: CrawlAppID {
@@ -510,12 +511,14 @@ public struct CrawlAppInstallation: Codable, Equatable, Sendable, Identifiable {
         binaryPath: String? = nil,
         configPathOverride: String? = nil,
         configValues: [String: String] = [:],
+        staleAfterSeconds: Int? = nil,
         enabled: Bool = true)
     {
         self.manifest = manifest
         self.binaryPath = binaryPath
         self.configPathOverride = configPathOverride
         self.configValues = configValues
+        self.staleAfterSeconds = staleAfterSeconds
         self.enabled = enabled
     }
 }

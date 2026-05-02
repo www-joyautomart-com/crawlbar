@@ -27,7 +27,10 @@ public struct CrawlStatusService: @unchecked Sendable {
         }
         do {
             let result = try self.runner.run(installation: installation, action: "status", timeoutSeconds: timeoutSeconds)
-            return self.mapper.status(from: result, manifest: installation.manifest)
+            return self.mapper.status(
+                from: result,
+                manifest: installation.manifest,
+                staleAfterSeconds: installation.staleAfterSeconds)
         } catch CrawlCommandRunnerError.timedOut {
             return CrawlAppStatus(
                 appID: installation.id,

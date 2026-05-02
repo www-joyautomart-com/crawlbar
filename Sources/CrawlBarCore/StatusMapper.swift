@@ -1,9 +1,16 @@
 import Foundation
 
 public struct CrawlStatusMapper: Sendable {
+    private static let defaultStaleAfterSeconds = 86_400
+
     public init() {}
 
-    public func status(from result: CrawlCommandResult, manifest: CrawlAppManifest) -> CrawlAppStatus {
+    public func status(
+        from result: CrawlCommandResult,
+        manifest: CrawlAppManifest,
+        staleAfterSeconds: Int? = nil)
+        -> CrawlAppStatus
+    {
         guard result.succeeded else {
             return CrawlAppStatus(
                 appID: result.appID,
@@ -23,25 +30,25 @@ public struct CrawlStatusMapper: Sendable {
 
         let status: CrawlAppStatus
         if self.isCrawlKitStatus(object) {
-            status = self.genericStatus(object, result: result)
+            status = self.genericStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
         } else {
             switch manifest.id {
             case BuiltInCrawlApps.gitcrawlID:
-                status = self.gitcrawlStatus(object, result: result)
+                status = self.gitcrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             case BuiltInCrawlApps.slacrawlID:
-                status = self.slacrawlStatus(object, result: result)
+                status = self.slacrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             case BuiltInCrawlApps.discrawlID:
-                status = self.discrawlStatus(object, result: result)
+                status = self.discrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             case BuiltInCrawlApps.notcrawlID:
-                status = self.notcrawlStatus(object, result: result)
+                status = self.notcrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             default:
-                status = self.genericStatus(object, result: result)
+                status = self.genericStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             }
         }
         return CrawlDatabaseInventory.enrich(status, manifest: manifest)
     }
 
-    private func gitcrawlStatus(_ object: [String: Any], result: CrawlCommandResult) -> CrawlAppStatus {
+    private func gitcrawlStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
         let counts = [
             self.count("threads", "Threads", ["thread_count", "threads"]),
             self.count("open_threads", "Open Threads", ["open_thread_count", "open_threads"]),
@@ -52,16 +59,16 @@ public struct CrawlStatusMapper: Sendable {
         let lastSyncAt = self.dateValue(["last_sync_at", "updated_at", "generated_at"], in: object)
         return CrawlAppStatus(
             appID: result.appID,
-            state: self.state(lastSyncAt: lastSyncAt, fallback: .current),
+            state: self.state(lastSyncAt: lastSyncAt, fallback: .current, staleAfterSeconds: staleAfterSeconds),
             summary: self.summary(from: counts, fallback: "Git crawl status is current"),
             configPath: self.stringValue(["config_path", "config"], in: object),
             databasePath: self.stringValue(["db_path", "database_path", "database"], in: object),
             lastSyncAt: lastSyncAt,
             counts: counts,
-            freshness: self.freshness(in: object, lastSyncAt: lastSyncAt))
+            freshness: self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds))
     }
 
-    private func slacrawlStatus(_ object: [String: Any], result: CrawlCommandResult) -> CrawlAppStatus {
+    private func slacrawlStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
         let flatCounts = [
             self.count("workspaces", "Workspaces", ["workspace_count", "workspaces"]),
             self.count("channels", "Channels", ["channel_count", "channels"]),
@@ -73,10 +80,10 @@ public struct CrawlStatusMapper: Sendable {
         let databases = self.databaseResources(in: object)
         let lastSyncAt = self.dateValue(["last_sync_at", "latest_message_at", "updated_at"], in: object)
             ?? self.databaseModifiedAt(databases)
-        let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt)
+        let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds)
         return CrawlAppStatus(
             appID: result.appID,
-            state: self.statusState(in: object, lastSyncAt: lastSyncAt, freshness: freshness, fallback: .current),
+            state: self.statusState(in: object, lastSyncAt: lastSyncAt, freshness: freshness, fallback: .current, staleAfterSeconds: staleAfterSeconds),
             summary: self.stringValue(["summary", "message"], in: object) ?? self.summary(from: counts, fallback: "Slack crawl status is current"),
             configPath: self.stringValue(["config_path", "config"], in: object),
             databasePath: self.stringValue(["db_path", "database_path", "database"], in: object),
@@ -88,7 +95,7 @@ public struct CrawlStatusMapper: Sendable {
             share: self.shareStatus(in: object))
     }
 
-    private func discrawlStatus(_ object: [String: Any], result: CrawlCommandResult) -> CrawlAppStatus {
+    private func discrawlStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
         let flatCounts = [
             self.count("guilds", "Guilds", ["guild_count", "guilds"]),
             self.count("channels", "Channels", ["channel_count", "channels"]),
@@ -102,10 +109,10 @@ public struct CrawlStatusMapper: Sendable {
         let databases = self.databaseResources(in: object)
         let lastSyncAt = self.dateValue(["last_sync_at", "latest_message_at", "updated_at"], in: object)
             ?? self.databaseModifiedAt(databases)
-        let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt)
+        let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds)
         return CrawlAppStatus(
             appID: result.appID,
-            state: self.statusState(in: object, lastSyncAt: lastSyncAt, freshness: freshness, fallback: .current),
+            state: self.statusState(in: object, lastSyncAt: lastSyncAt, freshness: freshness, fallback: .current, staleAfterSeconds: staleAfterSeconds),
             summary: self.stringValue(["summary", "message"], in: object) ?? self.summary(from: counts, fallback: "Discord crawl status is current"),
             configPath: self.stringValue(["config_path", "config"], in: object),
             databasePath: self.stringValue(["db_path", "database_path", "database"], in: object),
@@ -117,7 +124,7 @@ public struct CrawlStatusMapper: Sendable {
             share: self.shareStatus(in: object))
     }
 
-    private func notcrawlStatus(_ object: [String: Any], result: CrawlCommandResult) -> CrawlAppStatus {
+    private func notcrawlStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
         let counts = [
             self.count("spaces", "Spaces", ["space_count", "spaces"]),
             self.count("users", "Users", ["user_count", "users"]),
@@ -132,7 +139,7 @@ public struct CrawlStatusMapper: Sendable {
         let lastSyncAt = self.dateValue(["last_sync_at", "last_import_at", "updated_at"], in: object)
         return CrawlAppStatus(
             appID: result.appID,
-            state: self.state(lastSyncAt: lastSyncAt, fallback: .current),
+            state: self.state(lastSyncAt: lastSyncAt, fallback: .current, staleAfterSeconds: staleAfterSeconds),
             summary: self.summary(from: counts, fallback: "Notion crawl status is current"),
             configPath: self.stringValue(["config_path", "config"], in: object),
             databasePath: self.stringValue(["db_path", "database_path", "database"], in: object),
@@ -140,19 +147,19 @@ public struct CrawlStatusMapper: Sendable {
             walBytes: self.intValue(["wal_bytes"], in: object),
             lastSyncAt: lastSyncAt,
             counts: counts,
-            freshness: self.freshness(in: object, lastSyncAt: lastSyncAt),
+            freshness: self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds),
             share: self.shareStatus(in: object))
     }
 
-    private func genericStatus(_ object: [String: Any], result: CrawlCommandResult) -> CrawlAppStatus {
+    private func genericStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
         let counts = self.statusCounts(in: object, fallback: self.counts(in: object))
         let databases = self.databaseResources(in: object)
         let lastSyncAt = self.dateValue(["last_sync_at", "updated_at", "generated_at"], in: object)
             ?? self.databaseModifiedAt(databases)
-        let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt)
+        let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds)
         return CrawlAppStatus(
             appID: result.appID,
-            state: self.statusState(in: object, lastSyncAt: lastSyncAt, freshness: freshness, fallback: .current),
+            state: self.statusState(in: object, lastSyncAt: lastSyncAt, freshness: freshness, fallback: .current, staleAfterSeconds: staleAfterSeconds),
             summary: self.stringValue(["summary", "message"], in: object) ?? self.summary(from: counts, fallback: "Status is current"),
             configPath: self.stringValue(["config_path", "config"], in: object),
             databasePath: self.stringValue(["db_path", "database_path"], in: object),
@@ -202,30 +209,32 @@ public struct CrawlStatusMapper: Sendable {
         .sorted { $0.id < $1.id }
     }
 
-    private func state(lastSyncAt: Date?, fallback: CrawlAppState) -> CrawlAppState {
+    private func state(lastSyncAt: Date?, fallback: CrawlAppState, staleAfterSeconds: Int?) -> CrawlAppState {
         guard let lastSyncAt else { return fallback }
-        return Date().timeIntervalSince(lastSyncAt) > 86_400 ? .stale : .current
+        let threshold = staleAfterSeconds ?? Self.defaultStaleAfterSeconds
+        return Date().timeIntervalSince(lastSyncAt) > TimeInterval(threshold) ? .stale : .current
     }
 
-    private func freshness(lastSyncAt: Date?, staleAfterSeconds: Int = 86_400) -> CrawlFreshness? {
+    private func freshness(lastSyncAt: Date?, staleAfterSeconds: Int?) -> CrawlFreshness? {
         guard let lastSyncAt else { return nil }
+        let threshold = staleAfterSeconds ?? Self.defaultStaleAfterSeconds
         let ageSeconds = max(0, Int(Date().timeIntervalSince(lastSyncAt)))
         return CrawlFreshness(
-            status: ageSeconds > staleAfterSeconds ? .stale : .current,
+            status: ageSeconds > threshold ? .stale : .current,
             ageSeconds: ageSeconds,
-            staleAfterSeconds: staleAfterSeconds)
+            staleAfterSeconds: threshold)
     }
 
-    private func freshness(in object: [String: Any], lastSyncAt: Date?) -> CrawlFreshness? {
+    private func freshness(in object: [String: Any], lastSyncAt: Date?, staleAfterSeconds: Int?) -> CrawlFreshness? {
         if let freshness = self.firstObject(["freshness"], in: object),
            let status = self.statusValue(["status", "state"], in: freshness)
         {
             return CrawlFreshness(
                 status: status,
                 ageSeconds: self.intValue(["age_seconds"], in: freshness),
-                staleAfterSeconds: self.intValue(["stale_after_seconds"], in: freshness))
+                staleAfterSeconds: self.intValue(["stale_after_seconds"], in: freshness) ?? staleAfterSeconds)
         }
-        return self.freshness(lastSyncAt: lastSyncAt)
+        return self.freshness(lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds)
     }
 
     private func summary(from counts: [CrawlCount], fallback: String) -> String {
@@ -237,7 +246,8 @@ public struct CrawlStatusMapper: Sendable {
         in object: [String: Any],
         lastSyncAt: Date?,
         freshness: CrawlFreshness?,
-        fallback: CrawlAppState)
+        fallback: CrawlAppState,
+        staleAfterSeconds: Int?)
         -> CrawlAppState
     {
         if let rawValue = self.stringValue(["state", "status"], in: object),
@@ -248,7 +258,7 @@ public struct CrawlStatusMapper: Sendable {
             }
             return state
         }
-        return freshness?.status ?? self.state(lastSyncAt: lastSyncAt, fallback: fallback)
+        return freshness?.status ?? self.state(lastSyncAt: lastSyncAt, fallback: fallback, staleAfterSeconds: staleAfterSeconds)
     }
 
     private func statusCounts(in object: [String: Any], fallback: [CrawlCount]) -> [CrawlCount] {

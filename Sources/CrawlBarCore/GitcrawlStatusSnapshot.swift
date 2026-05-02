@@ -24,15 +24,16 @@ public enum GitcrawlStatusSnapshot {
             repository == nil ? nil : CrawlCount(id: "repositories", label: "Repositories", value: 1),
         ].compactMap { $0 }
 
+        let staleAfterSeconds = installation.staleAfterSeconds ?? 86_400
         let state: CrawlAppState = latestUpdatedAt.map {
-            Date().timeIntervalSince($0) > 86_400 ? .stale : .current
+            Date().timeIntervalSince($0) > TimeInterval(staleAfterSeconds) ? .stale : .current
         } ?? .current
         let freshness = latestUpdatedAt.map {
             let ageSeconds = max(0, Int(Date().timeIntervalSince($0)))
             return CrawlFreshness(
-                status: ageSeconds > 86_400 ? .stale : .current,
+                status: ageSeconds > staleAfterSeconds ? .stale : .current,
                 ageSeconds: ageSeconds,
-                staleAfterSeconds: 86_400)
+                staleAfterSeconds: staleAfterSeconds)
         }
 
         let status = CrawlAppStatus(

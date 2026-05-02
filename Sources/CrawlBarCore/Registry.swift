@@ -32,11 +32,14 @@ public struct CrawlAppRegistry: @unchecked Sendable {
             guard includeDisabled || enabled else { return nil }
             let requestedBinary = resolvedAppConfig.binaryPath?.nilIfBlank ?? manifest.binary.name
             let resolvedBinary = isAvailable ? self.resolver.resolve(requestedBinary) : nil
+            let refreshFrequency = resolvedAppConfig.refreshFrequency ?? config.refreshFrequency
+            let staleAfterSeconds = resolvedAppConfig.autoRefreshEnabled ? refreshFrequency.seconds.map(Int.init) : nil
             return CrawlAppInstallation(
                 manifest: manifest,
                 binaryPath: resolvedBinary,
                 configPathOverride: resolvedAppConfig.configPath,
                 configValues: resolvedAppConfig.configValues,
+                staleAfterSeconds: staleAfterSeconds,
                 enabled: enabled)
         }
     }
