@@ -76,12 +76,23 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
         submenu.addItem(.separator())
 
         if installation.enabled, installation.binaryPath != nil {
-            submenu.addItem(self.actionItem("Sync Now", appID: installation.id, action: config?.preferredRefreshAction ?? "refresh"))
-            submenu.addItem(self.actionItem("Doctor", appID: installation.id, action: "doctor"))
+            let refreshAction = config?.preferredRefreshAction ?? "refresh"
+            if self.commandAvailable(refreshAction, installation: installation) {
+                submenu.addItem(self.actionItem("Sync Now", appID: installation.id, action: refreshAction))
+            }
+            if self.commandAvailable("doctor", installation: installation) {
+                submenu.addItem(self.actionItem("Doctor", appID: installation.id, action: "doctor"))
+            }
             if config?.shareEnabled == true {
                 submenu.addItem(.separator())
-                submenu.addItem(self.actionItem("Publish Snapshot", appID: installation.id, action: config?.preferredShareAction ?? "publish"))
-                submenu.addItem(self.actionItem("Pull Updates", appID: installation.id, action: config?.preferredUpdateAction ?? "update"))
+                let publishAction = config?.preferredShareAction ?? "publish"
+                let updateAction = config?.preferredUpdateAction ?? "update"
+                if self.commandAvailable(publishAction, installation: installation) {
+                    submenu.addItem(self.actionItem("Publish Snapshot", appID: installation.id, action: publishAction))
+                }
+                if self.commandAvailable(updateAction, installation: installation) {
+                    submenu.addItem(self.actionItem("Pull Updates", appID: installation.id, action: updateAction))
+                }
             }
         } else {
             let setupText = installation.manifest.availability == .comingSoon
@@ -94,6 +105,10 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
         submenu.addItem(NSMenuItem(title: "Open Settings...", action: #selector(Self.showSettings(_:)), keyEquivalent: "", target: self))
         item.submenu = submenu
         return item
+    }
+
+    private func commandAvailable(_ action: String, installation: CrawlAppInstallation) -> Bool {
+        installation.manifest.commands[action] != nil
     }
 
     private func actionItem(_ title: String, appID: CrawlAppID, action: String) -> NSMenuItem {
@@ -307,14 +322,24 @@ final class CrawlBarMenuModel {
         let logStore = self.logStore
         Task.detached {
             let installation = try? registry.installation(for: appID)
+            var actionError: CrawlAppStatus?
             if let installation {
-                if let result = try? runner.run(installation: installation, action: action, timeoutSeconds: 600) {
+                do {
+                    let result = try runner.run(installation: installation, action: action, timeoutSeconds: 600)
                     _ = try? logStore.save(result)
+                    if !result.succeeded {
+                        let summary = result.stderr.nilIfBlank ?? result.stdout.nilIfBlank ?? "\(action) failed with exit \(result.exitCode)"
+                        actionError = CrawlAppStatus(appID: appID, state: .error, summary: summary, errors: [summary])
+                    }
+                } catch {
+                    actionError = CrawlAppStatus(appID: appID, state: .error, summary: error.localizedDescription, errors: [error.localizedDescription])
                 }
             }
             let refreshed = installation.map { statusService.status(for: $0, timeoutSeconds: 5) }
             await MainActor.run {
-                if let refreshed {
+                if let actionError {
+                    self.statuses[actionError.appID] = actionError
+                } else if let refreshed {
                     self.statuses[refreshed.appID] = refreshed
                 }
                 self.isRefreshing = false
