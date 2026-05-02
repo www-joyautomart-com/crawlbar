@@ -341,11 +341,10 @@ final class CrawlBarMenuModel {
                     let result = try runner.run(installation: installation, action: action, timeoutSeconds: 600)
                     _ = try? logStore.save(result)
                     if !result.succeeded {
-                        let summary = result.stderr.nilIfBlank ?? result.stdout.nilIfBlank ?? "\(action) failed with exit \(result.exitCode)"
-                        actionError = CrawlAppStatus(appID: appID, state: .error, summary: summary, errors: [summary])
+                        actionError = Self.actionFailureStatus(result)
                     }
                 } catch {
-                    actionError = CrawlAppStatus(appID: appID, state: .error, summary: error.localizedDescription, errors: [error.localizedDescription])
+                    actionError = Self.actionFailureStatus(appID: appID, action: action, message: error.localizedDescription)
                 }
             }
             let refreshed = installation.map { statusService.status(for: $0, timeoutSeconds: 5) }
@@ -383,13 +382,31 @@ final class CrawlBarMenuModel {
             let statuses = dueInstallations.map { installation -> CrawlAppStatus in
                 if let config = configs[installation.id] {
                     let refreshAction = config.preferredRefreshAction ?? "refresh"
-                    if let result = try? runner.run(installation: installation, action: refreshAction, timeoutSeconds: 600) {
+                    do {
+                        let result = try runner.run(installation: installation, action: refreshAction, timeoutSeconds: 600)
                         _ = try? logStore.save(result)
+                        if !result.succeeded {
+                            return Self.actionFailureStatus(result)
+                        }
+                    } catch {
+                        return Self.actionFailureStatus(
+                            appID: installation.id,
+                            action: refreshAction,
+                            message: error.localizedDescription)
                     }
                     if config.shareEnabled, config.shareAfterRefresh {
                         let shareAction = config.preferredShareAction ?? "publish"
-                        if let result = try? runner.run(installation: installation, action: shareAction, timeoutSeconds: 600) {
+                        do {
+                            let result = try runner.run(installation: installation, action: shareAction, timeoutSeconds: 600)
                             _ = try? logStore.save(result)
+                            if !result.succeeded {
+                                return Self.actionFailureStatus(result)
+                            }
+                        } catch {
+                            return Self.actionFailureStatus(
+                                appID: installation.id,
+                                action: shareAction,
+                                message: error.localizedDescription)
                         }
                     }
                 }
@@ -398,12 +415,28 @@ final class CrawlBarMenuModel {
             await MainActor.run {
                 for status in statuses {
                     self.statuses[status.appID] = status
-                    self.lastAutoSyncByAppID[status.appID] = now
+                    if status.state != .error {
+                        self.lastAutoSyncByAppID[status.appID] = now
+                    }
                 }
                 self.isRefreshing = false
                 onComplete()
             }
         }
+    }
+
+    nonisolated private static func actionFailureStatus(_ result: CrawlCommandResult) -> CrawlAppStatus {
+        let fallback = "\(result.action) failed with exit \(result.exitCode)"
+        let summary = result.stderr.nilIfBlank ?? result.stdout.nilIfBlank ?? fallback
+        return Self.actionFailureStatus(appID: result.appID, action: result.action, message: summary)
+    }
+
+    nonisolated private static func actionFailureStatus(appID: CrawlAppID, action: String, message: String) -> CrawlAppStatus {
+        CrawlAppStatus(
+            appID: appID,
+            state: .error,
+            summary: "\(action): \(message)",
+            errors: [message])
     }
 
 }

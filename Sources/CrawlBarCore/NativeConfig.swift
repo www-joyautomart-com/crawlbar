@@ -14,12 +14,10 @@ public struct CrawlNativeConfigStore: @unchecked Sendable {
     }
 
     public func write(appConfig: CrawlBarAppConfig, manifest: CrawlAppManifest) throws {
-        let values = appConfig.configValues.filter { key, value in
-            guard value.nilIfBlank != nil else { return false }
-            return manifest.configOptions.contains { $0.id == key && $0.configKey?.nilIfBlank != nil }
-        }
-        guard !values.isEmpty, let path = self.configPath(appConfig: appConfig, manifest: manifest) else { return }
-        try self.write(values: values, manifest: manifest, path: path)
+        guard manifest.configOptions.contains(where: { $0.configKey?.nilIfBlank != nil }),
+              let path = self.configPath(appConfig: appConfig, manifest: manifest)
+        else { return }
+        try self.write(values: appConfig.configValues, manifest: manifest, path: path)
     }
 
     public func write(config: CrawlBarConfig) throws {
@@ -62,6 +60,11 @@ public struct CrawlNativeConfigStore: @unchecked Sendable {
 
     private func write(values: [String: String], manifest: CrawlAppManifest, path: String) throws {
         let url = URL(fileURLWithPath: PathExpander.expandHome(path))
+        let hasWritableValues = manifest.configOptions.contains { option in
+            guard option.configKey?.nilIfBlank != nil else { return false }
+            return values[option.id]?.nilIfBlank != nil
+        }
+        guard self.fileManager.fileExists(atPath: url.path) || hasWritableValues else { return }
         let directory = url.deletingLastPathComponent()
         if !self.fileManager.fileExists(atPath: directory.path) {
             try self.fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -74,9 +77,11 @@ public struct CrawlNativeConfigStore: @unchecked Sendable {
         }
 
         for option in manifest.configOptions {
-            guard let value = values[option.id]?.nilIfBlank,
-                  let configKey = option.configKey?.nilIfBlank
-            else { continue }
+            guard let configKey = option.configKey?.nilIfBlank else { continue }
+            guard let value = values[option.id]?.nilIfBlank else {
+                Self.remove(configKey: configKey, in: &lines)
+                continue
+            }
             Self.set(configKey: configKey, value: Self.encodeTomlScalar(value, kind: option.kind), in: &lines)
         }
 
@@ -117,6 +122,22 @@ public struct CrawlNativeConfigStore: @unchecked Sendable {
             lines.append("[\(section)]")
         }
         lines.append(keyLine)
+    }
+
+    private static func remove(configKey: String, in lines: inout [String]) {
+        let parts = configKey.split(separator: ".").map(String.init)
+        guard let key = parts.last else { return }
+        let section = parts.dropLast().joined(separator: ".")
+        guard let sectionRange = Self.sectionRange(section, in: lines) else { return }
+        for index in sectionRange {
+            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+            guard let equals = trimmed.firstIndex(of: "=") else { continue }
+            let existingKey = trimmed[..<equals].trimmingCharacters(in: .whitespaces)
+            if existingKey == key {
+                lines.remove(at: index)
+                return
+            }
+        }
     }
 
     private static func sectionRange(_ section: String, in lines: [String]) -> Range<Int>? {

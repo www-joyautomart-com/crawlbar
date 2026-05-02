@@ -160,6 +160,9 @@ enum CrawlBarCLI {
         _ = try? CrawlActionLogStore().save(result)
         if json {
             try CLIOutput.writeJSON(result)
+            if !result.succeeded {
+                Foundation.exit(Int32(result.exitCode))
+            }
             return
         }
         print(result.stdout.nilIfBlank ?? result.stderr.nilIfBlank ?? "exit \(result.exitCode)")
@@ -299,7 +302,17 @@ enum CrawlBarCLI {
             if let installation = try registry.installation(for: appID),
                let appConfig = config.appConfig(for: appID)
             {
-                try nativeConfigStore.write(appConfig: appConfig, manifest: installation.manifest)
+                var nativeAppConfig = appConfig
+                var resolvedValues = nativeConfigStore.resolvedConfigValues(
+                    appConfig: appConfig,
+                    manifest: installation.manifest)
+                if value.nilIfBlank == nil {
+                    resolvedValues.removeValue(forKey: key)
+                } else {
+                    resolvedValues[key] = value
+                }
+                nativeAppConfig.configValues = resolvedValues
+                try nativeConfigStore.write(appConfig: nativeAppConfig, manifest: installation.manifest)
             }
             if options.json {
                 try CLIOutput.writeJSON(["app_id": appID.rawValue, "key": key, "updated": "true"])

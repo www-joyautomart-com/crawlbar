@@ -199,6 +199,27 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
         }
     }
 
+    public struct ConfigSection: Codable, Equatable, Sendable, Identifiable {
+        public var id: String
+        public var title: String
+        public var caption: String?
+        public var optionIDs: [String]
+
+        public init(id: String, title: String, caption: String? = nil, optionIDs: [String]) {
+            self.id = id
+            self.title = title
+            self.caption = caption
+            self.optionIDs = optionIDs
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case id
+            case title
+            case caption
+            case optionIDs = "option_ids"
+        }
+    }
+
     public var schemaVersion: Int
     public var id: CrawlAppID
     public var displayName: String
@@ -211,6 +232,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
     public var capabilities: [CrawlAppCapability]
     public var privacy: Privacy
     public var configOptions: [ConfigOption]
+    public var configSections: [ConfigSection]
     public var install: Install?
 
     public init(
@@ -226,6 +248,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
         capabilities: [CrawlAppCapability],
         privacy: Privacy = Privacy(),
         configOptions: [ConfigOption] = [],
+        configSections: [ConfigSection] = [],
         install: Install? = nil)
     {
         self.schemaVersion = schemaVersion
@@ -240,6 +263,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
         self.capabilities = capabilities
         self.privacy = privacy
         self.configOptions = configOptions
+        self.configSections = configSections
         self.install = install
     }
 
@@ -256,6 +280,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
         case capabilities
         case privacy
         case configOptions = "config_options"
+        case configSections = "config_sections"
         case install
     }
 
@@ -273,6 +298,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
         self.capabilities = try container.decode([CrawlAppCapability].self, forKey: .capabilities)
         self.privacy = try container.decodeIfPresent(Privacy.self, forKey: .privacy) ?? Privacy()
         self.configOptions = try container.decodeIfPresent([ConfigOption].self, forKey: .configOptions) ?? []
+        self.configSections = try container.decodeIfPresent([ConfigSection].self, forKey: .configSections) ?? []
         self.install = try container.decodeIfPresent(Install.self, forKey: .install)
     }
 }

@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class CrawlBarSettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
+    private var model: CrawlBarSettingsModel?
     var onClose: (() -> Void)?
 
     func show() {
@@ -18,6 +19,7 @@ final class CrawlBarSettingsWindowController: NSObject, NSWindowDelegate {
         }
 
         let model = CrawlBarSettingsModel()
+        self.model = model
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 820, height: 580),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -41,6 +43,8 @@ final class CrawlBarSettingsWindowController: NSObject, NSWindowDelegate {
 
     nonisolated func windowWillClose(_ notification: Notification) {
         Task { @MainActor in
+            self.model?.save()
+            self.model = nil
             self.window = nil
             self.onClose?()
         }
@@ -60,8 +64,10 @@ final class CrawlBarSettingsModel: ObservableObject {
     @Published var runningActions: [CrawlAppID: String] = [:]
     @Published var actionMessages: [CrawlAppID: String] = [:]
     @Published var lastError: String?
+    @Published var manifestDiagnostics: [CrawlManifestDiagnostic] = []
 
     private var refreshTask: Task<Void, Never>?
+    private var pendingSaveTask: Task<Void, Never>?
     private var refreshGeneration = UUID()
     private var manifestDirectories: [String] = ["~/.crawlbar/apps"]
     private let store = CrawlBarConfigStore()
@@ -82,6 +88,7 @@ final class CrawlBarSettingsModel: ObservableObject {
     func load() {
         do {
             let config = try self.store.loadOrCreateDefault()
+            self.manifestDiagnostics = CrawlManifestCatalog().diagnostics(config: config)
             let loadedInstallations = try self.registry.installations(includeDisabled: true)
             let manifests = Dictionary(uniqueKeysWithValues: loadedInstallations.map { ($0.id, $0.manifest) })
             let appConfigsByID = Dictionary(uniqueKeysWithValues: config.apps.map { ($0.id, $0) })
@@ -108,6 +115,22 @@ final class CrawlBarSettingsModel: ObservableObject {
     }
 
     func save() {
+        self.pendingSaveTask?.cancel()
+        self.pendingSaveTask = nil
+        self.persist()
+    }
+
+    func saveDebounced() {
+        self.pendingSaveTask?.cancel()
+        self.pendingSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            guard !Task.isCancelled else { return }
+            self.persist()
+            self.pendingSaveTask = nil
+        }
+    }
+
+    private func persist() {
         do {
             let config = CrawlBarConfig(
                 refreshFrequency: self.refreshFrequency,
@@ -115,7 +138,6 @@ final class CrawlBarSettingsModel: ObservableObject {
                 apps: self.apps)
             try self.store.save(config)
             try self.nativeConfigStore.write(config: config)
-            self.load()
             self.lastError = nil
         } catch {
             self.lastError = error.localizedDescription
@@ -393,6 +415,7 @@ struct CrawlBarSettingsView: View {
                 .buttonStyle(.borderless)
                 .controlSize(.small)
                 .help("Refresh status")
+                .accessibilityLabel("Refresh crawler status")
                 Button {
                     NSWorkspace.shared.open(CrawlActionLogStore.defaultDirectory())
                 } label: {
@@ -401,6 +424,7 @@ struct CrawlBarSettingsView: View {
                 .buttonStyle(.borderless)
                 .controlSize(.small)
                 .help("Open logs")
+                .accessibilityLabel("Open logs folder")
             }
             .padding(.horizontal, 4)
 
@@ -501,7 +525,8 @@ struct CrawlBarSettingsView: View {
                     installApp: { self.model.installApp(selectedID) },
                     backupDatabases: { self.model.backupDatabases(selectedID) },
                     openDataFolder: { self.model.openDataFolder(selectedID) },
-                    save: { self.model.save() })
+                    save: { self.model.save() },
+                    saveDebounced: { self.model.saveDebounced() })
             } else {
                 VStack(spacing: 10) {
                     Image(systemName: "sidebar.left")
@@ -523,7 +548,6 @@ struct CrawlBarSettingsView: View {
             set: {
                 guard let index = self.model.apps.firstIndex(where: { $0.id == id }) else { return }
                 self.model.apps[index] = $0
-                self.model.save()
             })
     }
 }
@@ -583,73 +607,93 @@ private struct CrawlBarGeneralSettingsView: View {
     @ObservedObject var model: CrawlBarSettingsModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 14) {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .frame(width: 42, height: 42)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("CrawlBar")
-                        .font(.title3.weight(.semibold))
-                    Text("Menu bar control plane for local crawler apps")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button {
-                    self.model.refreshAll()
-                } label: {
-                    Label("Refresh All", systemImage: "arrow.clockwise")
-                }
-                .disabled(self.model.isRefreshing)
-            }
-
-            CrawlBarPanel(title: "App") {
-                HStack(spacing: 8) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 14) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .frame(width: 42, height: 42)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("CrawlBar")
+                            .font(.title3.weight(.semibold))
+                        Text("Menu bar control plane for local crawler apps")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer()
                     Button {
-                        self.model.installCLI()
+                        self.model.refreshAll()
                     } label: {
-                        Label("Install CLI", systemImage: "terminal")
+                        Label("Refresh All", systemImage: "arrow.clockwise")
                     }
-                    .disabled(self.model.isInstallingCLI)
-                    Button {
-                        self.model.openConfigFile()
-                    } label: {
-                        Label("Config", systemImage: "doc.text")
-                    }
-                    Button {
-                        self.model.openLogsFolder()
-                    } label: {
-                        Label("Logs", systemImage: "folder")
-                    }
+                    .disabled(self.model.isRefreshing)
                 }
-                .controlSize(.small)
-                CrawlBarFact(label: "CLI Target", value: "~/.local/bin/crawlbar")
-                CrawlBarFact(label: "Config", value: CrawlBarConfigStore().fileURL.path)
-                if let message = self.model.appActionMessage {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
 
-            CrawlBarPanel(title: "Discovery") {
-                ForEach(self.manifestDirectories, id: \.self) { directory in
-                    CrawlBarFact(label: "Manifest Directory", value: directory)
-                }
-            }
-
-            CrawlBarPanel(title: "Inventory") {
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
-                    GridRow {
-                        CrawlBarFact(label: "Ready", value: "\(self.readyCount)")
-                        CrawlBarFact(label: "Missing CLI", value: "\(self.missingCount)")
-                        CrawlBarFact(label: "Coming Soon", value: "\(self.comingSoonCount)")
+                CrawlBarPanel(title: "App") {
+                    HStack(spacing: 8) {
+                        Button {
+                            self.model.installCLI()
+                        } label: {
+                            Label("Install CLI", systemImage: "terminal")
+                        }
+                        .disabled(self.model.isInstallingCLI)
+                        Button {
+                            self.model.openConfigFile()
+                        } label: {
+                            Label("Config", systemImage: "doc.text")
+                        }
+                        Button {
+                            self.model.openLogsFolder()
+                        } label: {
+                            Label("Logs", systemImage: "folder")
+                        }
+                    }
+                    .controlSize(.small)
+                    CrawlBarFact(label: "CLI Target", value: "~/.local/bin/crawlbar")
+                    CrawlBarFact(label: "Config", value: CrawlBarConfigStore().fileURL.path)
+                    if let message = self.model.appActionMessage {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
-            }
 
-            Spacer(minLength: 0)
+                CrawlBarPanel(title: "Discovery") {
+                    ForEach(self.manifestDirectories, id: \.self) { directory in
+                        CrawlBarFact(label: "Manifest Directory", value: directory)
+                    }
+                    if !self.model.manifestDiagnostics.isEmpty {
+                        Divider()
+                        ForEach(self.model.manifestDiagnostics) { diagnostic in
+                            Label {
+                                Text("\(diagnostic.path): \(diagnostic.message)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                    .truncationMode(.middle)
+                                    .textSelection(.enabled)
+                            } icon: {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .foregroundStyle(.yellow)
+                            }
+                        }
+                    }
+                }
+
+                CrawlBarPanel(title: "Inventory") {
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+                        GridRow {
+                            CrawlBarFact(label: "Ready", value: "\(self.readyCount)")
+                            CrawlBarFact(label: "Missing CLI", value: "\(self.missingCount)")
+                            CrawlBarFact(label: "Coming Soon", value: "\(self.comingSoonCount)")
+                        }
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -789,6 +833,7 @@ struct CrawlBarAppDetailView: View {
     let backupDatabases: () -> Void
     let openDataFolder: () -> Void
     let save: () -> Void
+    let saveDebounced: () -> Void
 
     @State private var selectedTab: CrawlBarDetailTab = .overview
 
@@ -847,17 +892,20 @@ struct CrawlBarAppDetailView: View {
                     }
                     .buttonStyle(.borderless)
                     .help("Refresh status")
+                    .accessibilityLabel("Refresh status")
                 }
                 Button(action: self.moveUp) {
                     Image(systemName: "chevron.up")
                 }
                 .buttonStyle(.borderless)
                 .help("Move up")
+                .accessibilityLabel("Move crawler up")
                 Button(action: self.moveDown) {
                     Image(systemName: "chevron.down")
                 }
                 .buttonStyle(.borderless)
                 .help("Move down")
+                .accessibilityLabel("Move crawler down")
             }
             .controlSize(.small)
         }
@@ -932,6 +980,7 @@ struct CrawlBarAppDetailView: View {
                     }
                     .buttonStyle(.borderless)
                     .help("Open data folder")
+                    .accessibilityLabel("Open data folder")
                     Button {
                         self.backupDatabases()
                     } label: {
@@ -940,6 +989,7 @@ struct CrawlBarAppDetailView: View {
                     .buttonStyle(.borderless)
                     .disabled(self.runningAction != nil)
                     .help("Back up database files")
+                    .accessibilityLabel("Back up database files")
                     Text("\(databases.count)")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
@@ -1074,8 +1124,10 @@ struct CrawlBarAppDetailView: View {
         CrawlBarPanel(title: "Paths") {
             TextField("Binary path override", text: self.optionalText(\.binaryPath))
                 .textFieldStyle(.roundedBorder)
+                .onSubmit(self.save)
             TextField("Config path override", text: self.optionalText(\.configPath))
                 .textFieldStyle(.roundedBorder)
+                .onSubmit(self.save)
             CrawlBarFact(label: "Default Config", value: self.manifest?.paths.defaultConfig ?? "None")
             CrawlBarFact(label: "Default Database", value: self.status?.databasePath ?? self.manifest?.paths.defaultDatabase ?? "Unknown")
             CrawlBarFact(label: "Logs", value: self.manifest?.paths.defaultLogs ?? "Unknown")
@@ -1252,7 +1304,7 @@ struct CrawlBarAppDetailView: View {
             get: { self.app[keyPath: keyPath] ?? "" },
             set: {
                 self.app[keyPath: keyPath] = $0.nilIfBlank
-                self.save()
+                self.saveDebounced()
             })
     }
 
@@ -1261,39 +1313,24 @@ struct CrawlBarAppDetailView: View {
             get: { self.app.configValues[option.id] ?? option.defaultValue ?? "" },
             set: {
                 self.app.configValues[option.id] = $0.nilIfBlank
-                self.save()
+                self.saveDebounced()
             })
     }
 
     private func configSections(for manifest: CrawlAppManifest) -> [CrawlBarConfigSection] {
-        let optionsByID = Dictionary(uniqueKeysWithValues: manifest.configOptions.map { ($0.id, $0) })
-        let sections: [CrawlBarConfigSection]
-        switch manifest.id {
-        case BuiltInCrawlApps.gitcrawlID:
-            sections = [
-                .init(id: "github", title: "GitHub Access", optionIDs: ["github_token"]),
-                .init(id: "ai", title: "Embeddings", optionIDs: ["openai_api_key", "embedding_model"]),
-            ]
-        case BuiltInCrawlApps.slacrawlID:
-            sections = [
-                .init(id: "slack", title: "Slack Access", optionIDs: ["slack_token"]),
-                .init(id: "ai", title: "Embeddings", optionIDs: ["openai_api_key", "embedding_model"]),
-            ]
-        case BuiltInCrawlApps.discrawlID:
-            sections = [
-                .init(id: "discord", title: "Discord Access", optionIDs: ["discord_token"]),
-                .init(id: "ai", title: "Embeddings", optionIDs: ["openai_api_key", "embedding_model"]),
-            ]
-        case BuiltInCrawlApps.notcrawlID:
-            sections = [
-                .init(id: "notion", title: "Notion Access", optionIDs: ["notion_token"]),
-                .init(id: "ai", title: "Embeddings", optionIDs: ["openai_api_key", "embedding_model"]),
-            ]
-        default:
-            sections = [
-                .init(id: "config", title: "Configuration", optionIDs: manifest.configOptions.map(\.id)),
-            ]
+        var optionsByID: [String: CrawlAppManifest.ConfigOption] = [:]
+        for option in manifest.configOptions where optionsByID[option.id] == nil {
+            optionsByID[option.id] = option
         }
+        let sections = manifest.configSections.isEmpty
+            ? [CrawlBarConfigSection(id: "config", title: "Configuration", optionIDs: manifest.configOptions.map(\.id))]
+            : manifest.configSections.map {
+                CrawlBarConfigSection(
+                    id: $0.id,
+                    title: $0.title,
+                    caption: $0.caption,
+                    optionIDs: $0.optionIDs)
+            }
 
         let usedIDs = Set(sections.flatMap(\.optionIDs))
         let resolved = sections.compactMap { section -> CrawlBarConfigSection? in
@@ -1379,6 +1416,7 @@ struct CrawlBarStatusDot: View {
             .fill(self.color)
             .frame(width: 8, height: 8)
             .help(self.state.rawValue)
+            .accessibilityLabel(self.state.rawValue.replacingOccurrences(of: "_", with: " "))
     }
 
     private var color: Color {

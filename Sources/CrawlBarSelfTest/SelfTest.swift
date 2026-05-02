@@ -94,6 +94,8 @@ enum CrawlBarSelfTest {
         try Self.expect(BuiltInCrawlApps.notcrawl.privacy.localOnlyScopes.contains("workspace pages"), "Notion privacy metadata flags workspace pages")
         try Self.expect(BuiltInCrawlApps.slacrawl.install?.package == "vincentkoc/tap/slacrawl", "built-in install metadata exists")
         try Self.expect(BuiltInCrawlApps.gogcli.availability == .comingSoon, "coming soon manifests are marked unavailable")
+        try Self.expect(BuiltInCrawlApps.gitcrawl.commands["status"] == ["status", "--json"], "gitcrawl uses fast status command")
+        try Self.expect(BuiltInCrawlApps.gitcrawl.configSections.contains { $0.id == "github" }, "built-in config sections exist")
     }
 
     private static func testNativeConfigRoundTrips() throws {
@@ -127,11 +129,18 @@ enum CrawlBarSelfTest {
             nativeStore.resolvedConfigValues(appConfig: appConfig, manifest: manifest)["openai_api_key"] == "from-file",
             "native TOML config values load")
 
+        appConfig.configValues = nativeStore.resolvedConfigValues(appConfig: appConfig, manifest: manifest)
         appConfig.configValues["embedding_model"] = "text-embedding-3-large"
         try nativeStore.write(appConfig: appConfig, manifest: manifest)
         let content = try String(contentsOf: configURL, encoding: .utf8)
+        try Self.expect(content.contains("api_key = \"from-file\""), "native TOML values preserve existing keys")
         try Self.expect(content.contains("[embeddings]"), "native TOML section writes")
         try Self.expect(content.contains("model = \"text-embedding-3-large\""), "native TOML value writes")
+
+        appConfig.configValues.removeValue(forKey: "openai_api_key")
+        try nativeStore.write(appConfig: appConfig, manifest: manifest)
+        let clearedContent = try String(contentsOf: configURL, encoding: .utf8)
+        try Self.expect(!clearedContent.contains("api_key ="), "native TOML keys clear when removed")
     }
 
     private static func testStatusMapperNormalizesCounts() throws {
@@ -311,10 +320,23 @@ enum CrawlBarSelfTest {
     }
 
     private static func testRedactorScrubsSecrets() throws {
-        let redacted = CrawlCommandRedactor().redact("token=abc123\nAuthorization: Bearer secret-token\ndiscord_token=discord-secret\nlabel=Discord archive")
+        let redacted = CrawlCommandRedactor().redact("""
+        token=abc123
+        Authorization: Bearer secret-token
+        discord_token=discord-secret
+        github_pat_1234567890abcdef
+        ghp_1234567890abcdef
+        sk-proj-1234567890abcdef
+        xoxc-1234567890abcdef
+        secret_notion123
+        mfa.discordsecret
+        label=Discord archive
+        """)
         try Self.expect(!redacted.contains("abc123"), "token value redacts")
         try Self.expect(!redacted.contains("secret-token"), "bearer value redacts")
         try Self.expect(!redacted.contains("discord-secret"), "discord token value redacts")
+        try Self.expect(!redacted.contains("1234567890abcdef"), "bare tokens redact")
+        try Self.expect(!redacted.contains("notion123"), "notion secrets redact")
         try Self.expect(redacted.contains("Discord archive"), "discord labels are not redacted")
     }
 
