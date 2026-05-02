@@ -84,7 +84,12 @@ final class CrawlBarSettingsModel: ObservableObject {
             let config = try self.store.loadOrCreateDefault()
             let loadedInstallations = try self.registry.installations(includeDisabled: true)
             let manifests = Dictionary(uniqueKeysWithValues: loadedInstallations.map { ($0.id, $0.manifest) })
-            self.apps = config.apps.map { appConfig in
+            let appConfigsByID = Dictionary(uniqueKeysWithValues: config.apps.map { ($0.id, $0) })
+            self.apps = loadedInstallations.map { installation in
+                let appConfig = appConfigsByID[installation.id] ?? CrawlBarAppConfig(
+                    id: installation.id,
+                    enabled: installation.manifest.availability == .available,
+                    showInMenuBar: installation.manifest.availability == .available)
                 guard let manifest = manifests[appConfig.id] else { return appConfig }
                 var copy = appConfig
                 copy.configValues = self.nativeConfigStore.resolvedConfigValues(appConfig: appConfig, manifest: manifest)

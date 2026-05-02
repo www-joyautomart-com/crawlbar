@@ -23,9 +23,14 @@ public struct CrawlAppRegistry: @unchecked Sendable {
     }
 
     public func installations(includeDisabled: Bool = true) throws -> [CrawlAppInstallation] {
-        let config = try self.loadConfig()
+        let loadedConfig = try self.loadConfig()
+        let manifests = Dictionary(uniqueKeysWithValues: self.catalog
+            .manifests(config: loadedConfig)
+            .map { ($0.id, $0) })
+        let knownIDs = manifests.keys.sorted()
+        let config = loadedConfig.normalized(knownIDs: knownIDs)
         return config.apps.compactMap { appConfig in
-            guard let manifest = self.catalog.manifest(for: appConfig.id, config: config) else { return nil }
+            guard let manifest = manifests[appConfig.id] else { return nil }
             let resolvedAppConfig = self.appConfigWithNativeValues(appConfig, manifest: manifest)
             let isAvailable = manifest.availability == .available
             let enabled = isAvailable && resolvedAppConfig.enabled
