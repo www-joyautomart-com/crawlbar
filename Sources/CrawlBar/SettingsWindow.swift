@@ -61,6 +61,8 @@ final class CrawlBarSettingsModel: ObservableObject {
     @Published var actionMessages: [CrawlAppID: String] = [:]
     @Published var lastError: String?
 
+    private var refreshTask: Task<Void, Never>?
+    private var refreshGeneration = UUID()
     private var manifestDirectories: [String] = ["~/.crawlbar/apps"]
     private let store = CrawlBarConfigStore()
     private let registry = CrawlAppRegistry()
@@ -128,28 +130,39 @@ final class CrawlBarSettingsModel: ObservableObject {
     }
 
     func refreshAll() {
+        self.refreshTask?.cancel()
+        let generation = UUID()
+        self.refreshGeneration = generation
         self.isRefreshing = true
         let registry = self.registry
         let statusService = self.statusService
-        Task.detached {
+        self.refreshTask = Task.detached {
             let installations = (try? registry.installations(includeDisabled: true)) ?? []
             await MainActor.run {
+                guard self.refreshGeneration == generation else { return }
                 self.installations = Dictionary(uniqueKeysWithValues: installations.map { ($0.id, $0) })
             }
             await withTaskGroup(of: CrawlAppStatus.self) { group in
                 for installation in installations {
                     group.addTask {
-                        statusService.status(for: installation, timeoutSeconds: 5)
+                        guard !Task.isCancelled else {
+                            return CrawlAppStatus(appID: installation.id, state: .unknown, summary: "Refresh cancelled")
+                        }
+                        return statusService.status(for: installation, timeoutSeconds: 5)
                     }
                 }
                 for await status in group {
+                    if Task.isCancelled { break }
                     await MainActor.run {
+                        guard self.refreshGeneration == generation else { return }
                         self.statuses[status.appID] = status
                     }
                 }
             }
             await MainActor.run {
+                guard self.refreshGeneration == generation else { return }
                 self.isRefreshing = false
+                self.refreshTask = nil
             }
         }
     }
