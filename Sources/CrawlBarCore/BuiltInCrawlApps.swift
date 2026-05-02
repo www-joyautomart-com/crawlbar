@@ -48,7 +48,7 @@ public enum BuiltInCrawlApps {
             "refresh": ["refresh"],
         ],
         capabilities: [.status, .doctor, .refresh, .search],
-        privacy: .init(),
+        privacy: .init(exportsSecrets: false, localOnlyScopes: ["repositories", "issues", "pull requests"]),
         configOptions: [
             .init(id: "github_token", label: "GitHub token", kind: .secret, help: "Token used for GitHub API refreshes.", placeholder: "ghp_...", envVar: "GITHUB_TOKEN", configKey: "github.token"),
             .init(id: "openai_api_key", label: "OpenAI API key", kind: .secret, help: "Used when Git Crawl generates embeddings.", placeholder: "sk-...", envVar: "OPENAI_API_KEY", configKey: "openai.api_key"),
@@ -80,7 +80,7 @@ public enum BuiltInCrawlApps {
             "update": ["--format", "json", "update"],
         ],
         capabilities: [.status, .doctor, .refresh, .search, .publish, .subscribe, .update, .desktopCache],
-        privacy: .init(),
+        privacy: .init(containsPrivateMessages: true, exportsSecrets: false, localOnlyScopes: ["workspaces", "channels", "DMs"]),
         configOptions: [
             .init(id: "slack_token", label: "Slack token", kind: .secret, help: "User or bot token for Slack API sync.", placeholder: "xoxp- or xoxb-", envVar: "SLACK_TOKEN", configKey: "slack.token"),
             .init(id: "openai_api_key", label: "OpenAI API key", kind: .secret, help: "Used when Slack Crawl generates embeddings.", placeholder: "sk-...", envVar: "OPENAI_API_KEY", configKey: "openai.api_key"),
@@ -147,7 +147,7 @@ public enum BuiltInCrawlApps {
             "update": ["update"],
         ],
         capabilities: [.status, .doctor, .refresh, .search, .publish, .subscribe, .update, .exportMarkdown, .exportDatabase, .maintain],
-        privacy: .init(),
+        privacy: .init(containsPrivateMessages: true, exportsSecrets: false, localOnlyScopes: ["workspace pages", "comments", "exports"]),
         configOptions: [
             .init(id: "notion_token", label: "Notion token", kind: .secret, help: "Token or session credential for Notion sync.", placeholder: "secret_...", envVar: "NOTION_TOKEN", configKey: "notion.token"),
             .init(id: "openai_api_key", label: "OpenAI API key", kind: .secret, help: "Used when Notion Crawl generates embeddings.", placeholder: "sk-...", envVar: "OPENAI_API_KEY", configKey: "openai.api_key"),
