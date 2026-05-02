@@ -23,11 +23,17 @@ public struct CrawlDatabaseBackup: Codable, Equatable, Sendable {
 
 public enum CrawlDatabaseBackupError: LocalizedError, Sendable {
     case noDatabases(CrawlAppID)
+    case sqliteUnavailable
+    case sqliteBackupFailed(path: String, message: String)
 
     public var errorDescription: String? {
         switch self {
         case let .noDatabases(appID):
             "\(appID.rawValue) does not expose any local database files to back up"
+        case .sqliteUnavailable:
+            "sqlite3 is not available on PATH"
+        case let .sqliteBackupFailed(path, message):
+            "SQLite backup failed for \(path): \(message)"
         }
     }
 }
@@ -76,11 +82,41 @@ public enum CrawlDatabaseBackupStore {
             if FileManager.default.fileExists(atPath: destination.path) {
                 try FileManager.default.removeItem(at: destination)
             }
-            try FileManager.default.copyItem(at: entry.source, to: destination)
+            if entry.resource.kind == .sqlite || entry.resource.kind == .cache {
+                try Self.backupSQLite(source: entry.source, destination: destination)
+            } else {
+                try FileManager.default.copyItem(at: entry.source, to: destination)
+            }
             copied.append(destination.path)
         }
 
         return CrawlDatabaseBackup(appID: status.appID, directory: directory.path, files: copied)
+    }
+
+    private static func backupSQLite(source: URL, destination: URL) throws {
+        guard let sqlitePath = CrawlExecutableResolver().resolve("sqlite3") else {
+            throw CrawlDatabaseBackupError.sqliteUnavailable
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: sqlitePath)
+        process.arguments = [source.path]
+
+        let input = Pipe()
+        let pipe = Pipe()
+        process.standardInput = input
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        let command = ".timeout 5000\n.backup '\(destination.path.replacingOccurrences(of: "'", with: "''"))'\n"
+        input.fileHandleForWriting.write(Data(command.utf8))
+        try? input.fileHandleForWriting.close()
+        process.waitUntilExit()
+
+        if process.terminationStatus != 0 {
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let message = String(data: data, encoding: .utf8)?.nilIfBlank ?? "sqlite3 exited \(process.terminationStatus)"
+            throw CrawlDatabaseBackupError.sqliteBackupFailed(path: source.path, message: message)
+        }
     }
 
     private static func destinationName(

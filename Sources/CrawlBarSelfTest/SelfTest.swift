@@ -235,8 +235,8 @@ enum CrawlBarSelfTest {
         try FileManager.default.createDirectory(at: secondDirectory, withIntermediateDirectories: true)
         let firstDatabaseURL = firstDirectory.appendingPathComponent("sample.db")
         let secondDatabaseURL = secondDirectory.appendingPathComponent("sample.db")
-        try Data("sqlite-one".utf8).write(to: firstDatabaseURL)
-        try Data("sqlite-two".utf8).write(to: secondDatabaseURL)
+        try Self.createSQLiteDatabase(firstDatabaseURL, value: "sqlite-one")
+        try Self.createSQLiteDatabase(secondDatabaseURL, value: "sqlite-two")
         let status = CrawlAppStatus(
             appID: BuiltInCrawlApps.notcrawlID,
             state: .current,
@@ -259,7 +259,7 @@ enum CrawlBarSelfTest {
         let backup = try CrawlDatabaseBackupStore.backup(status: status, root: directory.appendingPathComponent("backups", isDirectory: true))
         try Self.expect(backup.files.count == 2, "backup copies duplicate-named files")
         try Self.expect(Set(backup.files.map { URL(fileURLWithPath: $0).lastPathComponent }).count == 2, "backup destination names are unique")
-        let copiedContents = try backup.files.map { try String(contentsOfFile: $0, encoding: .utf8) }
+        let copiedContents = try backup.files.map { try Self.sqliteValue(URL(fileURLWithPath: $0)) }
         try Self.expect(copiedContents.contains("sqlite-one"), "backup preserves first duplicate file")
         try Self.expect(copiedContents.contains("sqlite-two"), "backup preserves second duplicate file")
     }
@@ -276,6 +276,35 @@ enum CrawlBarSelfTest {
         if !condition {
             throw SelfTestError.failed(message)
         }
+    }
+
+    private static func createSQLiteDatabase(_ url: URL, value: String) throws {
+        try Self.runSQLite(url, sql: "create table sample(value text); insert into sample(value) values('\(value)');")
+    }
+
+    private static func sqliteValue(_ url: URL) throws -> String {
+        try Self.runSQLite(url, sql: "select value from sample limit 1;")
+    }
+
+    @discardableResult
+    private static func runSQLite(_ url: URL, sql: String) throws -> String {
+        guard let sqlitePath = CrawlExecutableResolver().resolve("sqlite3") else {
+            throw SelfTestError.failed("sqlite3 is available")
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: sqlitePath)
+        process.arguments = [url.path, sql]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        process.waitUntilExit()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let text = String(data: data, encoding: .utf8) ?? ""
+        guard process.terminationStatus == 0 else {
+            throw SelfTestError.failed("sqlite3 failed: \(text)")
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
