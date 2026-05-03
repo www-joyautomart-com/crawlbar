@@ -307,7 +307,7 @@ final class CrawlBarMenuModel {
         let registry = self.registry
         let statusService = self.statusService
         self.refreshTask = Task.detached {
-            let installations = (try? registry.installations(includeDisabled: true)) ?? []
+            let installations = (try? registry.installations(includeDisabled: true, includeSecrets: true)) ?? []
             await MainActor.run {
                 guard self.refreshGeneration == generation else { return }
                 self.installations = installations
@@ -404,18 +404,19 @@ final class CrawlBarMenuModel {
         let logStore = self.logStore
         Task.detached {
             let updates = dueInstallations.map { installation -> CrawlActionStatusUpdate in
+                let statusInstallation = (try? registry.installation(for: installation.id, includeSecrets: true)) ?? installation
+
                 func failureUpdate(_ failure: CrawlAppStatus) -> CrawlActionStatusUpdate {
                     CrawlActionStatusUpdate(
-                        status: statusService.status(for: installation, timeoutSeconds: 5),
+                        status: statusService.status(for: statusInstallation, timeoutSeconds: 5),
                         actionFailure: failure)
                 }
 
                 if let config = configs[installation.id] {
                     let refreshAction = config.preferredRefreshAction ?? "refresh"
-                    let actionInstallation = (try? registry.installation(for: installation.id, includeSecrets: true)) ?? installation
                     do {
                         CrawlBarLog.actions.notice("Running scheduled \(refreshAction, privacy: .public) for \(installation.id.rawValue, privacy: .public)")
-                        let result = try runner.run(installation: actionInstallation, action: refreshAction, timeoutSeconds: 600)
+                        let result = try runner.run(installation: statusInstallation, action: refreshAction, timeoutSeconds: 600)
                         _ = try? logStore.save(result)
                         if !result.succeeded {
                             CrawlBarLog.actions.error(
@@ -432,10 +433,9 @@ final class CrawlBarMenuModel {
                     }
                     if config.shareEnabled, config.shareAfterRefresh {
                         let shareAction = config.preferredShareAction ?? "publish"
-                        let actionInstallation = (try? registry.installation(for: installation.id, includeSecrets: true)) ?? installation
                         do {
                             CrawlBarLog.actions.notice("Running scheduled \(shareAction, privacy: .public) for \(installation.id.rawValue, privacy: .public)")
-                            let result = try runner.run(installation: actionInstallation, action: shareAction, timeoutSeconds: 600)
+                            let result = try runner.run(installation: statusInstallation, action: shareAction, timeoutSeconds: 600)
                             _ = try? logStore.save(result)
                             if !result.succeeded {
                                 CrawlBarLog.actions.error(
@@ -453,7 +453,7 @@ final class CrawlBarMenuModel {
                     }
                 }
                 return CrawlActionStatusUpdate(
-                    status: statusService.status(for: installation, timeoutSeconds: 5),
+                    status: statusService.status(for: statusInstallation, timeoutSeconds: 5),
                     actionFailure: nil)
             }
             await MainActor.run {

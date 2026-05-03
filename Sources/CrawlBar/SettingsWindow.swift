@@ -171,7 +171,7 @@ final class CrawlBarSettingsModel: ObservableObject {
         let registry = self.registry
         let statusService = self.statusService
         self.refreshTask = Task.detached {
-            let installations = (try? registry.installations(includeDisabled: true)) ?? []
+            let installations = (try? registry.installations(includeDisabled: true, includeSecrets: true)) ?? []
             await MainActor.run {
                 guard self.refreshGeneration == generation else { return }
                 self.installations = Dictionary(uniqueKeysWithValues: installations.map { ($0.id, $0) })
@@ -231,7 +231,7 @@ final class CrawlBarSettingsModel: ObservableObject {
                 message = error.localizedDescription
                 actionError = Self.actionFailureStatus(appID: appID, action: action, message: error.localizedDescription)
             }
-            let refreshedStatus = statusService.status(for: installation, timeoutSeconds: 5)
+            let refreshedStatus = statusService.status(for: actionInstallation, timeoutSeconds: 5)
             await MainActor.run {
                 let status = actionError.map {
                     Self.actionFailureStatus($0, refreshedStatus: refreshedStatus, currentStatus: self.statuses[appID])

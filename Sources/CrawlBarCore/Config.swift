@@ -269,16 +269,22 @@ public struct CrawlBarConfigStore: @unchecked Sendable {
         var copy = config
         for index in copy.apps.indices {
             guard let manifest = manifests[copy.apps[index].id] else { continue }
-            for option in manifest.configOptions where option.kind == .secret {
-                guard copy.apps[index].configValues[option.id]?.nilIfBlank == nil else { continue }
-                do {
-                    if let value = try self.secretStore.value(appID: copy.apps[index].id, optionID: option.id)?.nilIfBlank {
-                        copy.apps[index].configValues[option.id] = value
-                    }
-                } catch {
-                    CrawlBarLog.keychain.error(
-                        "Keychain read failed for \(copy.apps[index].id.rawValue, privacy: .public).\(option.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            copy.apps[index] = self.appConfigWithSecrets(copy.apps[index], manifest: manifest)
+        }
+        return copy
+    }
+
+    public func appConfigWithSecrets(_ appConfig: CrawlBarAppConfig, manifest: CrawlAppManifest) -> CrawlBarAppConfig {
+        var copy = appConfig
+        for option in manifest.configOptions where option.kind == .secret {
+            guard copy.configValues[option.id]?.nilIfBlank == nil else { continue }
+            do {
+                if let value = try self.secretStore.value(appID: copy.id, optionID: option.id)?.nilIfBlank {
+                    copy.configValues[option.id] = value
                 }
+            } catch {
+                CrawlBarLog.keychain.error(
+                    "Keychain read failed for \(copy.id.rawValue, privacy: .public).\(option.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
         }
         return copy

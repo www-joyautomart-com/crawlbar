@@ -23,7 +23,7 @@ public struct CrawlAppRegistry: @unchecked Sendable {
     }
 
     public func installations(includeDisabled: Bool = true, includeSecrets: Bool = false) throws -> [CrawlAppInstallation] {
-        let loadedConfig = try self.loadConfig(includeSecrets: includeSecrets)
+        let loadedConfig = try self.loadConfig()
         let manifests = Dictionary(uniqueKeysWithValues: self.catalog
             .manifests(config: loadedConfig)
             .map { ($0.id, $0) })
@@ -31,12 +31,15 @@ public struct CrawlAppRegistry: @unchecked Sendable {
         let config = loadedConfig.normalized(knownIDs: knownIDs)
         return config.apps.compactMap { appConfig in
             guard let manifest = manifests[appConfig.id] else { return nil }
-            let resolvedAppConfig = self.appConfigWithNativeValues(appConfig, manifest: manifest)
+            let nativeAppConfig = self.appConfigWithNativeValues(appConfig, manifest: manifest)
             let isAvailable = manifest.availability == .available
-            let enabled = isAvailable && resolvedAppConfig.enabled
+            let enabled = isAvailable && nativeAppConfig.enabled
             guard includeDisabled || enabled else { return nil }
-            let requestedBinary = resolvedAppConfig.binaryPath?.nilIfBlank ?? manifest.binary.name
+            let requestedBinary = nativeAppConfig.binaryPath?.nilIfBlank ?? manifest.binary.name
             let resolvedBinary = isAvailable ? self.resolver.resolve(requestedBinary) : nil
+            let resolvedAppConfig = includeSecrets && enabled && resolvedBinary != nil
+                ? self.configStore.appConfigWithSecrets(nativeAppConfig, manifest: manifest)
+                : nativeAppConfig
             let refreshFrequency = resolvedAppConfig.refreshFrequency ?? config.refreshFrequency
             let staleAfterSeconds = resolvedAppConfig.autoRefreshEnabled ? refreshFrequency.seconds.map(Int.init) : nil
             return CrawlAppInstallation(
