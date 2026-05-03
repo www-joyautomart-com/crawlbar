@@ -21,6 +21,7 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
     private let model = CrawlBarMenuModel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        CrawlBarLog.app.notice("CrawlBar launched")
         self.settingsWindowController.onClose = { [weak self] in
             self?.hideFromApplicationSwitcher()
         }
@@ -33,6 +34,10 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
             self?.reloadMenu()
         }
         self.scheduleRefreshTimer()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        CrawlBarLog.app.notice("CrawlBar terminated")
     }
 
     private func reloadMenu() {
@@ -207,6 +212,7 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showSettings(_ sender: Any?) {
+        CrawlBarLog.app.debug("Opening settings")
         self.showInApplicationSwitcher()
         self.settingsWindowController.show()
         self.model.reloadInstallations()
@@ -224,10 +230,12 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openLogs(_ sender: Any?) {
+        CrawlBarLog.app.debug("Opening action logs folder")
         NSWorkspace.shared.open(CrawlActionLogStore.defaultDirectory())
     }
 
     @objc private func quit(_ sender: Any?) {
+        CrawlBarLog.app.notice("Quit requested")
         NSApplication.shared.terminate(nil)
     }
 }
@@ -240,6 +248,11 @@ final class CrawlMenuCommand: NSObject {
         self.appID = appID
         self.action = action
     }
+}
+
+private struct CrawlActionStatusUpdate: Sendable {
+    let status: CrawlAppStatus
+    let actionFailure: CrawlAppStatus?
 }
 
 @MainActor
@@ -280,6 +293,8 @@ final class CrawlBarMenuModel {
         if let config = try? self.registry.loadConfig() {
             self.refreshFrequency = config.refreshFrequency
             self.appConfigs = Dictionary(uniqueKeysWithValues: config.apps.map { ($0.id, $0) })
+        } else {
+            CrawlBarLog.config.error("Failed to load CrawlBar config")
         }
         self.installations = (try? self.registry.installations(includeDisabled: true)) ?? []
     }
@@ -334,23 +349,31 @@ final class CrawlBarMenuModel {
         let statusService = self.statusService
         let logStore = self.logStore
         Task.detached {
-            let installation = try? registry.installation(for: appID)
+            let installation = try? registry.installation(for: appID, includeSecrets: true)
             var actionError: CrawlAppStatus?
             if let installation {
                 do {
+                    CrawlBarLog.actions.notice("Running \(action, privacy: .public) for \(appID.rawValue, privacy: .public)")
                     let result = try runner.run(installation: installation, action: action, timeoutSeconds: 600)
                     _ = try? logStore.save(result)
                     if !result.succeeded {
+                        CrawlBarLog.actions.error(
+                            "\(action, privacy: .public) for \(appID.rawValue, privacy: .public) failed with exit \(result.exitCode)")
                         actionError = Self.actionFailureStatus(result)
                     }
                 } catch {
+                    CrawlBarLog.actions.error(
+                        "\(action, privacy: .public) for \(appID.rawValue, privacy: .public) threw: \(error.localizedDescription, privacy: .public)")
                     actionError = Self.actionFailureStatus(appID: appID, action: action, message: error.localizedDescription)
                 }
             }
             let refreshed = installation.map { statusService.status(for: $0, timeoutSeconds: 5) }
             await MainActor.run {
                 if let actionError {
-                    self.statuses[actionError.appID] = actionError
+                    self.statuses[actionError.appID] = Self.actionFailureStatus(
+                        actionError,
+                        refreshedStatus: refreshed,
+                        currentStatus: self.statuses[actionError.appID])
                 } else if let refreshed {
                     self.statuses[refreshed.appID] = refreshed
                 }
@@ -375,47 +398,71 @@ final class CrawlBarMenuModel {
 
         self.isRefreshing = true
         let configs = self.appConfigs
+        let registry = self.registry
         let runner = self.runner
         let statusService = self.statusService
         let logStore = self.logStore
         Task.detached {
-            let statuses = dueInstallations.map { installation -> CrawlAppStatus in
+            let updates = dueInstallations.map { installation -> CrawlActionStatusUpdate in
+                func failureUpdate(_ failure: CrawlAppStatus) -> CrawlActionStatusUpdate {
+                    CrawlActionStatusUpdate(
+                        status: statusService.status(for: installation, timeoutSeconds: 5),
+                        actionFailure: failure)
+                }
+
                 if let config = configs[installation.id] {
                     let refreshAction = config.preferredRefreshAction ?? "refresh"
+                    let actionInstallation = (try? registry.installation(for: installation.id, includeSecrets: true)) ?? installation
                     do {
-                        let result = try runner.run(installation: installation, action: refreshAction, timeoutSeconds: 600)
+                        CrawlBarLog.actions.notice("Running scheduled \(refreshAction, privacy: .public) for \(installation.id.rawValue, privacy: .public)")
+                        let result = try runner.run(installation: actionInstallation, action: refreshAction, timeoutSeconds: 600)
                         _ = try? logStore.save(result)
                         if !result.succeeded {
-                            return Self.actionFailureStatus(result)
+                            CrawlBarLog.actions.error(
+                                "Scheduled \(refreshAction, privacy: .public) for \(installation.id.rawValue, privacy: .public) failed with exit \(result.exitCode)")
+                            return failureUpdate(Self.actionFailureStatus(result))
                         }
                     } catch {
-                        return Self.actionFailureStatus(
+                        CrawlBarLog.actions.error(
+                            "Scheduled \(refreshAction, privacy: .public) for \(installation.id.rawValue, privacy: .public) threw: \(error.localizedDescription, privacy: .public)")
+                        return failureUpdate(Self.actionFailureStatus(
                             appID: installation.id,
                             action: refreshAction,
-                            message: error.localizedDescription)
+                            message: error.localizedDescription))
                     }
                     if config.shareEnabled, config.shareAfterRefresh {
                         let shareAction = config.preferredShareAction ?? "publish"
+                        let actionInstallation = (try? registry.installation(for: installation.id, includeSecrets: true)) ?? installation
                         do {
-                            let result = try runner.run(installation: installation, action: shareAction, timeoutSeconds: 600)
+                            CrawlBarLog.actions.notice("Running scheduled \(shareAction, privacy: .public) for \(installation.id.rawValue, privacy: .public)")
+                            let result = try runner.run(installation: actionInstallation, action: shareAction, timeoutSeconds: 600)
                             _ = try? logStore.save(result)
                             if !result.succeeded {
-                                return Self.actionFailureStatus(result)
+                                CrawlBarLog.actions.error(
+                                    "Scheduled \(shareAction, privacy: .public) for \(installation.id.rawValue, privacy: .public) failed with exit \(result.exitCode)")
+                                return failureUpdate(Self.actionFailureStatus(result))
                             }
                         } catch {
-                            return Self.actionFailureStatus(
+                            CrawlBarLog.actions.error(
+                                "Scheduled \(shareAction, privacy: .public) for \(installation.id.rawValue, privacy: .public) threw: \(error.localizedDescription, privacy: .public)")
+                            return failureUpdate(Self.actionFailureStatus(
                                 appID: installation.id,
                                 action: shareAction,
-                                message: error.localizedDescription)
+                                message: error.localizedDescription))
                         }
                     }
                 }
-                return statusService.status(for: installation, timeoutSeconds: 5)
+                return CrawlActionStatusUpdate(
+                    status: statusService.status(for: installation, timeoutSeconds: 5),
+                    actionFailure: nil)
             }
             await MainActor.run {
-                for status in statuses {
+                for update in updates {
+                    let status = update.actionFailure.map {
+                        Self.actionFailureStatus($0, refreshedStatus: update.status, currentStatus: self.statuses[$0.appID])
+                    } ?? update.status
                     self.statuses[status.appID] = status
-                    if status.state != .error {
+                    if update.actionFailure == nil, status.state != .error {
                         self.lastAutoSyncByAppID[status.appID] = now
                     }
                 }
@@ -437,6 +484,18 @@ final class CrawlBarMenuModel {
             state: .error,
             summary: "\(action): \(message)",
             errors: [message])
+    }
+
+    nonisolated private static func actionFailureStatus(
+        _ failure: CrawlAppStatus,
+        refreshedStatus: CrawlAppStatus?,
+        currentStatus: CrawlAppStatus?)
+        -> CrawlAppStatus
+    {
+        guard let metadataStatus = CrawlAppStatus.richestMetadataStatus(refreshedStatus, fallback: currentStatus) else {
+            return failure
+        }
+        return metadataStatus.mergingActionFailure(failure)
     }
 
 }

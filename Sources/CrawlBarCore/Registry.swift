@@ -18,12 +18,12 @@ public struct CrawlAppRegistry: @unchecked Sendable {
         self.nativeConfigStore = nativeConfigStore
     }
 
-    public func loadConfig() throws -> CrawlBarConfig {
-        try self.configStore.loadOrCreateDefault()
+    public func loadConfig(includeSecrets: Bool = false) throws -> CrawlBarConfig {
+        try self.configStore.loadOrCreateDefault(includeSecrets: includeSecrets)
     }
 
-    public func installations(includeDisabled: Bool = true) throws -> [CrawlAppInstallation] {
-        let loadedConfig = try self.loadConfig()
+    public func installations(includeDisabled: Bool = true, includeSecrets: Bool = false) throws -> [CrawlAppInstallation] {
+        let loadedConfig = try self.loadConfig(includeSecrets: includeSecrets)
         let manifests = Dictionary(uniqueKeysWithValues: self.catalog
             .manifests(config: loadedConfig)
             .map { ($0.id, $0) })
@@ -49,12 +49,12 @@ public struct CrawlAppRegistry: @unchecked Sendable {
         }
     }
 
-    public func installation(for id: CrawlAppID) throws -> CrawlAppInstallation? {
-        try self.installations(includeDisabled: true).first { $0.id == id }
+    public func installation(for id: CrawlAppID, includeSecrets: Bool = false) throws -> CrawlAppInstallation? {
+        try self.installations(includeDisabled: true, includeSecrets: includeSecrets).first { $0.id == id }
     }
 
-    public func availableInstallations() throws -> [CrawlAppInstallation] {
-        try self.installations(includeDisabled: false).filter { $0.binaryPath != nil }
+    public func availableInstallations(includeSecrets: Bool = false) throws -> [CrawlAppInstallation] {
+        try self.installations(includeDisabled: false, includeSecrets: includeSecrets).filter { $0.binaryPath != nil }
     }
 
     public func appConfigWithNativeValues(_ appConfig: CrawlBarAppConfig, manifest: CrawlAppManifest) -> CrawlBarAppConfig {

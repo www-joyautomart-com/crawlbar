@@ -147,7 +147,7 @@ enum CrawlBarCLI {
         appID: CrawlAppID)
         throws
     {
-        guard let installation = try registry.installation(for: appID) else {
+        guard let installation = try registry.installation(for: appID, includeSecrets: true) else {
             throw CLIError.usage("unknown app: \(appID.rawValue)")
         }
         guard installation.enabled else {
@@ -254,7 +254,7 @@ enum CrawlBarCLI {
             try CLIOutput.writeJSON(config)
         case "get":
             let appID = try options.requiredAppID()
-            let config = try store.loadOrCreateDefault()
+            let config = try store.loadOrCreateDefault(includeSecrets: options.revealSecrets)
             let installation = try registry.installation(for: appID)
             let baseAppConfig = config.appConfig(for: appID) ?? CrawlBarAppConfig(id: appID)
             let appConfig = installation.map {

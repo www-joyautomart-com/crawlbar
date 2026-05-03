@@ -223,19 +223,19 @@ public struct CrawlBarConfigStore: @unchecked Sendable {
         self.secretStore = secretStore
     }
 
-    public func load() throws -> CrawlBarConfig? {
+    public func load(includeSecrets: Bool = false) throws -> CrawlBarConfig? {
         guard self.fileManager.fileExists(atPath: self.fileURL.path) else { return nil }
         let data = try Data(contentsOf: self.fileURL)
         do {
             let config = try CrawlCoding.makeJSONDecoder().decode(CrawlBarConfig.self, from: data).normalized()
-            return self.configWithSecrets(config)
+            return includeSecrets ? self.configWithSecrets(config) : config
         } catch {
             throw CrawlBarConfigStoreError.decodeFailed(error.localizedDescription)
         }
     }
 
-    public func loadOrCreateDefault() throws -> CrawlBarConfig {
-        if let existing = try self.load() {
+    public func loadOrCreateDefault(includeSecrets: Bool = false) throws -> CrawlBarConfig {
+        if let existing = try self.load(includeSecrets: includeSecrets) {
             return existing
         }
         let config = CrawlBarConfig().normalized()
@@ -270,10 +270,15 @@ public struct CrawlBarConfigStore: @unchecked Sendable {
         for index in copy.apps.indices {
             guard let manifest = manifests[copy.apps[index].id] else { continue }
             for option in manifest.configOptions where option.kind == .secret {
-                guard copy.apps[index].configValues[option.id]?.nilIfBlank == nil,
-                      let value = try? self.secretStore.value(appID: copy.apps[index].id, optionID: option.id)?.nilIfBlank
-                else { continue }
-                copy.apps[index].configValues[option.id] = value
+                guard copy.apps[index].configValues[option.id]?.nilIfBlank == nil else { continue }
+                do {
+                    if let value = try self.secretStore.value(appID: copy.apps[index].id, optionID: option.id)?.nilIfBlank {
+                        copy.apps[index].configValues[option.id] = value
+                    }
+                } catch {
+                    CrawlBarLog.keychain.error(
+                        "Keychain read failed for \(copy.apps[index].id.rawValue, privacy: .public).\(option.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                }
             }
         }
         return copy

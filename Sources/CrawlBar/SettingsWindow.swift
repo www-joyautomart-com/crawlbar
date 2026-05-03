@@ -21,8 +21,12 @@ final class CrawlBarSettingsWindowController: NSObject, NSWindowDelegate {
         let model = CrawlBarSettingsModel()
         self.model = model
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 820, height: 580),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: CrawlBarSettingsLayout.minWindowWidth,
+                height: CrawlBarSettingsLayout.minWindowHeight),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
         window.title = "CrawlBar"
@@ -30,8 +34,9 @@ final class CrawlBarSettingsWindowController: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.center()
-        window.contentMinSize = NSSize(width: 820, height: 580)
-        window.contentMaxSize = NSSize(width: 820, height: 580)
+        window.contentMinSize = NSSize(
+            width: CrawlBarSettingsLayout.minWindowWidth,
+            height: CrawlBarSettingsLayout.minWindowHeight)
         window.contentView = NSHostingView(rootView: CrawlBarSettingsView(model: model))
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate()
@@ -110,6 +115,7 @@ final class CrawlBarSettingsModel: ObservableObject {
             }
             self.lastError = nil
         } catch {
+            CrawlBarLog.config.error("Settings load failed: \(error.localizedDescription, privacy: .public)")
             self.lastError = error.localizedDescription
         }
     }
@@ -140,6 +146,7 @@ final class CrawlBarSettingsModel: ObservableObject {
             try self.nativeConfigStore.write(config: config)
             self.lastError = nil
         } catch {
+            CrawlBarLog.config.error("Settings save failed: \(error.localizedDescription, privacy: .public)")
             self.lastError = error.localizedDescription
         }
     }
@@ -201,24 +208,34 @@ final class CrawlBarSettingsModel: ObservableObject {
         let runner = self.runner
         let statusService = self.statusService
         let logStore = self.logStore
+        let registry = self.registry
         Task.detached {
+            let actionInstallation = (try? registry.installation(for: appID, includeSecrets: true)) ?? installation
             let message: String
             var actionError: CrawlAppStatus?
             do {
-                let result = try runner.run(installation: installation, action: action, timeoutSeconds: 600)
+                CrawlBarLog.actions.notice("Running \(action, privacy: .public) for \(appID.rawValue, privacy: .public) from settings")
+                let result = try runner.run(installation: actionInstallation, action: action, timeoutSeconds: 600)
                 _ = try? logStore.save(result)
                 message = result.exitCode == 0
                     ? "\(Self.actionTitle(action)) finished"
                     : "\(Self.actionTitle(action)) failed with exit \(result.exitCode)"
                 if !result.succeeded {
+                    CrawlBarLog.actions.error(
+                        "\(action, privacy: .public) for \(appID.rawValue, privacy: .public) failed with exit \(result.exitCode)")
                     actionError = Self.actionFailureStatus(result)
                 }
             } catch {
+                CrawlBarLog.actions.error(
+                    "\(action, privacy: .public) for \(appID.rawValue, privacy: .public) threw: \(error.localizedDescription, privacy: .public)")
                 message = error.localizedDescription
                 actionError = Self.actionFailureStatus(appID: appID, action: action, message: error.localizedDescription)
             }
-            let status = actionError ?? statusService.status(for: installation, timeoutSeconds: 5)
+            let refreshedStatus = statusService.status(for: installation, timeoutSeconds: 5)
             await MainActor.run {
+                let status = actionError.map {
+                    Self.actionFailureStatus($0, refreshedStatus: refreshedStatus, currentStatus: self.statuses[appID])
+                } ?? refreshedStatus
                 self.statuses[appID] = status
                 self.runningActions[appID] = nil
                 self.actionMessages[appID] = message
@@ -332,6 +349,18 @@ final class CrawlBarSettingsModel: ObservableObject {
             errors: [message])
     }
 
+    nonisolated private static func actionFailureStatus(
+        _ failure: CrawlAppStatus,
+        refreshedStatus: CrawlAppStatus?,
+        currentStatus: CrawlAppStatus?)
+        -> CrawlAppStatus
+    {
+        guard let metadataStatus = CrawlAppStatus.richestMetadataStatus(refreshedStatus, fallback: currentStatus) else {
+            return failure
+        }
+        return metadataStatus.mergingActionFailure(failure)
+    }
+
     nonisolated private static func installBundledCLI() throws -> String {
         let fileManager = FileManager.default
         let sourceCandidates = Self.cliSourceCandidates()
@@ -390,11 +419,9 @@ private enum CrawlBarSettingsMode: String, CaseIterable, Identifiable {
 }
 
 private enum CrawlBarSettingsLayout {
-    static let windowWidth: CGFloat = 820
-    static let windowHeight: CGFloat = 580
-    static let contentHeight: CGFloat = 548
-    static let sidebarWidth: CGFloat = 246
-    static let detailWidth: CGFloat = 522
+    static let minWindowWidth: CGFloat = 860
+    static let minWindowHeight: CGFloat = 620
+    static let sidebarWidth: CGFloat = 252
 }
 
 struct CrawlBarSettingsView: View {
@@ -406,15 +433,17 @@ struct CrawlBarSettingsView: View {
             self.sidebar
             self.detail
                 .frame(
-                    width: CrawlBarSettingsLayout.detailWidth,
-                    height: CrawlBarSettingsLayout.contentHeight,
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
                     alignment: .topLeading)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
         .frame(
-            width: CrawlBarSettingsLayout.windowWidth,
-            height: CrawlBarSettingsLayout.windowHeight,
+            minWidth: CrawlBarSettingsLayout.minWindowWidth,
+            maxWidth: .infinity,
+            minHeight: CrawlBarSettingsLayout.minWindowHeight,
+            maxHeight: .infinity,
             alignment: .top)
     }
 
@@ -492,24 +521,6 @@ struct CrawlBarSettingsView: View {
                     .stroke(Color(nsColor: .separatorColor).opacity(0.7), lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-            HStack(spacing: 8) {
-                Text("Default Sync")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 6)
-                Picker("Default Sync", selection: self.$model.refreshFrequency) {
-                    ForEach(RefreshFrequency.allCases, id: \.self) { frequency in
-                        Text(CrawlBarFrequencyLabel.text(for: frequency)).tag(frequency)
-                    }
-                }
-                .labelsHidden()
-                .controlSize(.mini)
-                .frame(width: 118)
-                .onChange(of: self.model.refreshFrequency) {
-                    self.model.save()
-                }
-            }
-
             if let error = self.model.lastError {
                 Text(error)
                     .font(.caption)
@@ -517,7 +528,8 @@ struct CrawlBarSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(width: CrawlBarSettingsLayout.sidebarWidth, height: CrawlBarSettingsLayout.contentHeight)
+        .frame(width: CrawlBarSettingsLayout.sidebarWidth)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     @ViewBuilder
@@ -547,14 +559,9 @@ struct CrawlBarSettingsView: View {
                     save: { self.model.save() },
                     saveDebounced: { self.model.saveDebounced() })
             } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 32))
-                        .foregroundStyle(.secondary)
-                    Text("Select a crawler")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                }
+                ContentUnavailableView(
+                    "No crawler selected",
+                    systemImage: "sidebar.left")
             }
         }
     }
@@ -660,21 +667,39 @@ private struct CrawlBarGeneralSettingsView: View {
                         Button {
                             self.model.openConfigFile()
                         } label: {
-                            Label("Config", systemImage: "doc.text")
+                            Label("Open Config", systemImage: "doc.text")
                         }
                         Button {
                             self.model.openLogsFolder()
                         } label: {
-                            Label("Logs", systemImage: "folder")
+                            Label("Open Logs", systemImage: "folder")
                         }
                     }
                     .controlSize(.small)
-                    CrawlBarFact(label: "CLI Target", value: "~/.local/bin/crawlbar")
+                    CrawlBarFact(label: "CLI install path", value: "~/.local/bin/crawlbar")
                     CrawlBarFact(label: "Config", value: CrawlBarConfigStore().fileURL.path)
                     if let message = self.model.appActionMessage {
                         Text(message)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    }
+                }
+
+                CrawlBarPanel(title: "Scheduling") {
+                    CrawlBarControlRow(
+                        title: "Default schedule",
+                        caption: "Used by crawlers that inherit the global sync interval.")
+                    {
+                        Picker("Default schedule", selection: self.$model.refreshFrequency) {
+                            ForEach(RefreshFrequency.allCases, id: \.self) { frequency in
+                                Text(CrawlBarFrequencyLabel.text(for: frequency)).tag(frequency)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 180)
+                        .onChange(of: self.model.refreshFrequency) {
+                            self.model.save()
+                        }
                     }
                 }
 
@@ -700,7 +725,7 @@ private struct CrawlBarGeneralSettingsView: View {
                     }
                 }
 
-                CrawlBarPanel(title: "Inventory") {
+                CrawlBarPanel(title: "Crawler Inventory") {
                     Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                         GridRow {
                             CrawlBarFact(label: "Ready", value: "\(self.readyCount)")
@@ -884,8 +909,8 @@ struct CrawlBarAppDetailView: View {
             }
         }
         .frame(
-            width: CrawlBarSettingsLayout.detailWidth,
-            height: CrawlBarSettingsLayout.contentHeight,
+            maxWidth: .infinity,
+            maxHeight: .infinity,
             alignment: .topLeading)
     }
 
@@ -1029,6 +1054,12 @@ struct CrawlBarAppDetailView: View {
                     }
                 }
             }
+        } else {
+            ContentUnavailableView(
+                "No database metadata",
+                systemImage: "internaldrive",
+                description: Text("This crawler has not reported database paths or sizes yet."))
+                .frame(maxWidth: .infinity, minHeight: 180)
         }
     }
 
@@ -1053,29 +1084,59 @@ struct CrawlBarAppDetailView: View {
                     }
                 }
             }
+        } else {
+            ContentUnavailableView(
+                "No counts yet",
+                systemImage: "number",
+                description: Text("This crawler has not reported count metrics yet."))
+                .frame(maxWidth: .infinity, minHeight: 140)
         }
     }
 
     private var syncSettings: some View {
         CrawlBarPanel(title: "Sync") {
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Enabled", isOn: self.$app.enabled)
-                    .onChange(of: self.app.enabled) { self.save() }
-                Toggle("Show in menu bar", isOn: self.$app.showInMenuBar)
-                    .onChange(of: self.app.showInMenuBar) { self.save() }
-                Toggle("Automatic sync", isOn: self.$app.autoRefreshEnabled)
-                    .onChange(of: self.app.autoRefreshEnabled) { self.save() }
-                Toggle("Use default schedule", isOn: self.usesGlobalRefreshBinding)
-                    .disabled(!self.app.autoRefreshEnabled)
-            }
-            Picker("Sync every", selection: self.refreshFrequencyBinding) {
-                ForEach(RefreshFrequency.allCases, id: \.self) { frequency in
-                    Text(CrawlBarFrequencyLabel.text(for: frequency)).tag(frequency)
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle(isOn: self.$app.enabled) {
+                    CrawlBarOptionLabel(
+                        title: "Enable crawler",
+                        caption: "Allow CrawlBar to run actions and show live status.")
                 }
+                    .onChange(of: self.app.enabled) { self.save() }
+                Toggle(isOn: self.$app.showInMenuBar) {
+                    CrawlBarOptionLabel(
+                        title: "Show in menu bar",
+                        caption: "Include this crawler in the menu bar status menu.")
+                }
+                    .disabled(!self.app.enabled)
+                    .onChange(of: self.app.showInMenuBar) { self.save() }
+                Toggle(isOn: self.$app.autoRefreshEnabled) {
+                    CrawlBarOptionLabel(
+                        title: "Run on schedule",
+                        caption: "Refresh this crawler automatically in the background.")
+                }
+                    .disabled(!self.app.enabled)
+                    .onChange(of: self.app.autoRefreshEnabled) { self.save() }
+                Toggle(isOn: self.usesGlobalRefreshBinding) {
+                    CrawlBarOptionLabel(
+                        title: "Use default schedule",
+                        caption: "Follow the global interval from General settings.")
+                }
+                    .disabled(!self.app.enabled || !self.app.autoRefreshEnabled)
             }
-            .disabled(!self.app.autoRefreshEnabled || self.app.refreshFrequency == nil)
-            .controlSize(.small)
-            Text("Global sync schedule: \(CrawlBarFrequencyLabel.text(for: self.globalRefreshFrequency))")
+            CrawlBarControlRow(
+                title: "Custom schedule",
+                caption: "Overrides the global interval for this crawler.")
+            {
+                Picker("Custom schedule", selection: self.refreshFrequencyBinding) {
+                    ForEach(RefreshFrequency.allCases, id: \.self) { frequency in
+                        Text(CrawlBarFrequencyLabel.text(for: frequency)).tag(frequency)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 180)
+            }
+            .disabled(!self.app.enabled || !self.app.autoRefreshEnabled || self.app.refreshFrequency == nil)
+            Text("Default schedule: \(CrawlBarFrequencyLabel.text(for: self.globalRefreshFrequency))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack(spacing: 8) {
@@ -1097,7 +1158,7 @@ struct CrawlBarAppDetailView: View {
                     Button {
                         self.runAction("doctor")
                     } label: {
-                        Label("Doctor", systemImage: "stethoscope")
+                        Label("Run Doctor", systemImage: "stethoscope")
                     }
                 }
                 if self.commandAvailable(self.app.preferredUpdateAction ?? "update") {
@@ -1110,9 +1171,13 @@ struct CrawlBarAppDetailView: View {
             }
             .disabled(self.runningAction != nil)
             if let runningAction {
-                Label("Running \(runningAction)...", systemImage: "hourglass")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Running \(runningAction)...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             } else if let actionMessage {
                 Text(actionMessage)
                     .font(.caption)
@@ -1122,18 +1187,34 @@ struct CrawlBarAppDetailView: View {
     }
 
     private var gitShareSettings: some View {
-        CrawlBarPanel(title: "Git Share") {
-            Toggle("Manage Git snapshot for this crawler", isOn: self.$app.shareEnabled)
+        CrawlBarPanel(title: "Git Snapshot") {
+            Toggle(isOn: self.$app.shareEnabled) {
+                CrawlBarOptionLabel(
+                    title: "Manage snapshot",
+                    caption: "Keep a local Git export for this crawler's shareable data.")
+            }
                 .onChange(of: self.app.shareEnabled) { self.save() }
-            Toggle("Publish after refresh", isOn: self.$app.shareAfterRefresh)
+            Toggle(isOn: self.$app.shareAfterRefresh) {
+                CrawlBarOptionLabel(
+                    title: "Publish after sync",
+                    caption: "Push the snapshot after a scheduled or manual sync.")
+            }
                 .disabled(!self.app.shareEnabled)
                 .onChange(of: self.app.shareAfterRefresh) { self.save() }
             HStack(spacing: 8) {
                 if self.commandAvailable(self.app.preferredShareAction ?? "publish") {
-                    Button("Publish") { self.runAction(self.app.preferredShareAction ?? "publish") }
+                    Button {
+                        self.runAction(self.app.preferredShareAction ?? "publish")
+                    } label: {
+                        Label("Publish Snapshot", systemImage: "arrow.up.circle")
+                    }
                 }
                 if self.commandAvailable(self.app.preferredUpdateAction ?? "update") {
-                    Button("Pull Updates") { self.runAction(self.app.preferredUpdateAction ?? "update") }
+                    Button {
+                        self.runAction(self.app.preferredUpdateAction ?? "update")
+                    } label: {
+                        Label("Pull Updates", systemImage: "arrow.down.circle")
+                    }
                 }
             }
             .disabled(!self.app.shareEnabled || self.runningAction != nil)
@@ -1146,12 +1227,24 @@ struct CrawlBarAppDetailView: View {
 
     private var paths: some View {
         CrawlBarPanel(title: "Paths") {
-            TextField("Binary path override", text: self.optionalText(\.binaryPath))
-                .textFieldStyle(.roundedBorder)
-                .onSubmit(self.save)
-            TextField("Config path override", text: self.optionalText(\.configPath))
-                .textFieldStyle(.roundedBorder)
-                .onSubmit(self.save)
+            CrawlBarControlRow(
+                title: "Binary path override",
+                caption: "Leave empty to resolve the CLI from PATH.")
+            {
+                TextField("Optional", text: self.optionalText(\.binaryPath))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 260)
+                    .onSubmit(self.save)
+            }
+            CrawlBarControlRow(
+                title: "Config path override",
+                caption: "Leave empty to use the crawler default.")
+            {
+                TextField("Optional", text: self.optionalText(\.configPath))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 260)
+                    .onSubmit(self.save)
+            }
             CrawlBarFact(label: "Default Config", value: self.manifest?.paths.defaultConfig ?? "None")
             CrawlBarFact(label: "Default Database", value: self.status?.databasePath ?? self.manifest?.paths.defaultDatabase ?? "Unknown")
             CrawlBarFact(label: "Logs", value: self.manifest?.paths.defaultLogs ?? "Unknown")
@@ -1439,8 +1532,8 @@ struct CrawlBarStatusDot: View {
         Circle()
             .fill(self.color)
             .frame(width: 8, height: 8)
-            .help(self.state.rawValue)
-            .accessibilityLabel(self.state.rawValue.replacingOccurrences(of: "_", with: " "))
+            .help(CrawlBarStatusLabel.text(for: self.state))
+            .accessibilityLabel(CrawlBarStatusLabel.text(for: self.state))
     }
 
     private var color: Color {
@@ -1465,7 +1558,7 @@ struct CrawlBarStatusPill: View {
     var body: some View {
         HStack(spacing: 5) {
             CrawlBarStatusDot(state: self.state)
-            Text(self.state.rawValue.replacingOccurrences(of: "_", with: " "))
+            Text(CrawlBarStatusLabel.text(for: self.state))
                 .font(.caption.weight(.medium))
         }
         .padding(.horizontal, 8)
@@ -1490,6 +1583,51 @@ struct CrawlBarFact: View {
                 .textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct CrawlBarControlRow<Content: View>: View {
+    let title: String
+    let caption: String?
+    @ViewBuilder var content: Content
+
+    init(title: String, caption: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.caption = caption
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(self.title)
+                    .font(.callout)
+                if let caption {
+                    Text(caption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            self.content
+        }
+    }
+}
+
+struct CrawlBarOptionLabel: View {
+    let title: String
+    let caption: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(self.title)
+                .font(.callout)
+            Text(self.caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -1600,21 +1738,26 @@ struct CrawlBarConfigOptionField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
+            if self.option.kind != .boolean {
+                Text(self.option.label)
+                    .font(.callout)
+            }
             switch self.option.kind {
             case .secret:
-                SecureField(self.option.label, text: self.$value)
+                SecureField(self.option.placeholder ?? "Value", text: self.$value)
                     .textFieldStyle(.roundedBorder)
             case .boolean:
                 Toggle(self.option.label, isOn: self.booleanBinding)
             case .choice:
-                Picker(self.option.label, selection: self.$value) {
+                Picker("Value", selection: self.$value) {
                     ForEach(self.choices, id: \.self) { choice in
                         Text(choice).tag(choice)
                     }
                 }
-                .controlSize(.small)
+                .labelsHidden()
+                .frame(width: 260)
             case .string:
-                TextField(self.option.placeholder ?? self.option.label, text: self.$value)
+                TextField(self.option.placeholder ?? "Value", text: self.$value)
                     .textFieldStyle(.roundedBorder)
             }
             if let help = self.option.help?.nilIfBlank {
@@ -1670,6 +1813,29 @@ enum CrawlBarFrequencyLabel {
             "30 minutes"
         case .hourly:
             "Hourly"
+        }
+    }
+}
+
+enum CrawlBarStatusLabel {
+    static func text(for state: CrawlAppState) -> String {
+        switch state {
+        case .current:
+            "Current"
+        case .stale:
+            "Stale"
+        case .syncing:
+            "Syncing"
+        case .needsConfig:
+            "Needs Config"
+        case .needsAuth:
+            "Needs Auth"
+        case .error:
+            "Error"
+        case .disabled:
+            "Disabled"
+        case .unknown:
+            "Unknown"
         }
     }
 }

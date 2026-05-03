@@ -10,6 +10,7 @@ enum CrawlBarSelfTest {
         try Self.testExternalManifestCatalog()
         try Self.testNativeConfigRoundTrips()
         try Self.testStatusMapperNormalizesCounts()
+        try Self.testActionFailuresPreserveStatusMetadata()
         try Self.testConfigValuesReachCommandEnvironment()
         try Self.testCommandTimeoutEscalates()
         try Self.testDatabaseBackupCopiesFiles()
@@ -243,6 +244,54 @@ enum CrawlBarSelfTest {
             configValues: ["test_value": "from-config"])
         let result = try CrawlCommandRunner().run(installation: installation, action: "status", timeoutSeconds: 5)
         try Self.expect(result.stdout == "from-config", "config values reach crawler command environment")
+    }
+
+    private static func testActionFailuresPreserveStatusMetadata() throws {
+        let lastSyncAt = Date(timeIntervalSince1970: 1_775_000_000)
+        let metadata = CrawlAppStatus(
+            appID: BuiltInCrawlApps.discrawlID,
+            state: .current,
+            summary: "5052 messages",
+            configPath: "/tmp/discrawl.toml",
+            databasePath: "/tmp/discrawl.db",
+            databaseBytes: 36_397_056,
+            lastSyncAt: lastSyncAt,
+            counts: [CrawlCount(id: "messages", label: "Messages", value: 5052)],
+            databases: [
+                CrawlDatabaseResource(
+                    id: "primary",
+                    label: "Discord archive",
+                    kind: .sqlite,
+                    path: "/tmp/discrawl.db",
+                    isPrimary: true,
+                    bytes: 36_397_056),
+            ],
+            freshness: CrawlFreshness(status: .current, ageSeconds: 12, staleAfterSeconds: 86_400),
+            share: CrawlShareStatus(enabled: true, repoPath: "/tmp/share", remote: "origin", branch: "main"),
+            warnings: ["old warning"])
+        let failure = CrawlAppStatus(
+            appID: BuiltInCrawlApps.discrawlID,
+            state: .error,
+            summary: "refresh: network timed out",
+            errors: ["network timed out"])
+
+        let merged = metadata.mergingActionFailure(failure)
+        try Self.expect(merged.state == .error, "action failure state is visible")
+        try Self.expect(merged.summary == "refresh: network timed out", "action failure summary is visible")
+        try Self.expect(merged.databasePath == metadata.databasePath, "action failure preserves database path")
+        try Self.expect(merged.databases == metadata.databases, "action failure preserves databases")
+        try Self.expect(merged.counts == metadata.counts, "action failure preserves counts")
+        try Self.expect(merged.lastSyncAt == lastSyncAt, "action failure preserves last sync")
+        try Self.expect(merged.share == metadata.share, "action failure preserves share metadata")
+        try Self.expect(merged.warnings == ["old warning"], "action failure preserves existing warnings")
+        try Self.expect(merged.errors == ["network timed out"], "action failure keeps failure errors")
+
+        let emptyRefreshed = CrawlAppStatus(
+            appID: BuiltInCrawlApps.discrawlID,
+            state: .error,
+            summary: "status failed")
+        let richest = CrawlAppStatus.richestMetadataStatus(emptyRefreshed, fallback: metadata)
+        try Self.expect(richest == metadata, "previous rich metadata wins over empty refreshed status")
     }
 
     private static func testCommandTimeoutEscalates() throws {

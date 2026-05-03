@@ -520,6 +520,64 @@ public struct CrawlAppStatus: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+public extension CrawlAppStatus {
+    func mergingActionFailure(_ failure: CrawlAppStatus) -> CrawlAppStatus {
+        guard self.appID == failure.appID else { return failure }
+        return CrawlAppStatus(
+            schemaVersion: self.schemaVersion,
+            appID: self.appID,
+            generatedAt: failure.generatedAt,
+            state: .error,
+            summary: failure.summary,
+            configPath: self.configPath,
+            databasePath: self.databasePath,
+            databaseBytes: self.databaseBytes,
+            walBytes: self.walBytes,
+            lastSyncAt: self.lastSyncAt,
+            lastImportAt: self.lastImportAt,
+            lastExportAt: self.lastExportAt,
+            counts: self.counts,
+            databases: self.databases,
+            freshness: self.freshness,
+            share: self.share,
+            warnings: Self.mergedMessages(failure.warnings, self.warnings),
+            errors: Self.mergedMessages(failure.errors, self.errors))
+    }
+
+    static func richestMetadataStatus(_ preferred: CrawlAppStatus?, fallback: CrawlAppStatus?) -> CrawlAppStatus? {
+        guard let preferred else { return fallback }
+        guard let fallback else { return preferred }
+        return preferred.metadataScore >= fallback.metadataScore ? preferred : fallback
+    }
+
+    private var metadataScore: Int {
+        var score = 0
+        score += self.configPath == nil ? 0 : 1
+        score += self.databasePath == nil ? 0 : 1
+        score += self.databaseBytes == nil ? 0 : 1
+        score += self.walBytes == nil ? 0 : 1
+        score += self.lastSyncAt == nil ? 0 : 1
+        score += self.lastImportAt == nil ? 0 : 1
+        score += self.lastExportAt == nil ? 0 : 1
+        score += self.counts.isEmpty ? 0 : 2
+        score += self.databases.isEmpty ? 0 : 3
+        score += self.freshness == nil ? 0 : 1
+        score += self.share == nil ? 0 : 2
+        return score
+    }
+
+    private static func mergedMessages(_ primary: [String], _ secondary: [String]) -> [String] {
+        var seen = Set<String>()
+        var messages: [String] = []
+        for message in primary + secondary {
+            guard !seen.contains(message) else { continue }
+            seen.insert(message)
+            messages.append(message)
+        }
+        return messages
+    }
+}
+
 public struct CrawlAppInstallation: Codable, Equatable, Sendable, Identifiable {
     public var manifest: CrawlAppManifest
     public var binaryPath: String?
