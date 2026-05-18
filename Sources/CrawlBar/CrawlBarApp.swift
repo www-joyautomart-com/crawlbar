@@ -151,7 +151,7 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
         if !installation.enabled { return .disabled }
         if installation.binaryPath == nil { return .needsConfig }
         let state = status?.state ?? .unknown
-        if installation.id == BuiltInCrawlApps.graincrawlID, state == .error {
+        if status?.isRecoverableGraincrawlSourceFailure == true {
             return .stale
         }
         return state

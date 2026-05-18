@@ -2,22 +2,27 @@ import Foundation
 
 public enum GitcrawlStatusSnapshot {
     public static func repository(for installation: CrawlAppInstallation) -> String? {
-        guard installation.id == BuiltInCrawlApps.gitcrawlID,
-              let databasePath = Self.databasePath(for: installation)
-        else { return nil }
-        let filename = URL(fileURLWithPath: databasePath).lastPathComponent
-        let stem = filename.replacingOccurrences(of: ".sync.db", with: "")
-        let parts = stem.split(separator: "__", maxSplits: 1).map(String.init)
-        if parts.count == 2 {
-            return "\(parts[0])/\(parts[1])"
+        guard installation.id == BuiltInCrawlApps.gitcrawlID else { return nil }
+        if let databasePath = Self.configuredDatabasePath(for: installation),
+           let repository = Self.repository(fromDatabasePath: databasePath)
+        {
+            return repository
         }
-        return Self.adjacentReportURL(databasePath: databasePath).flatMap(Self.reportRepository)
+        if let databasePath = Self.configuredDatabasePath(for: installation) {
+            return Self.adjacentReportURL(databasePath: databasePath).flatMap(Self.reportRepository)
+        }
+        if let databasePath = Self.defaultDatabasePath(for: installation),
+           let repository = Self.repository(fromDatabasePath: databasePath)
+        {
+            return repository
+        }
+        return Self.reportContext(for: installation)?.repository
     }
 
     public static func status(for installation: CrawlAppInstallation) -> CrawlAppStatus? {
         guard installation.id == BuiltInCrawlApps.gitcrawlID else { return nil }
-        guard let reportURL = Self.reportURL(for: installation),
-              let data = try? Data(contentsOf: reportURL),
+        guard let context = Self.reportContext(for: installation),
+              let data = try? Data(contentsOf: context.reportURL),
               let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         else { return nil }
 
@@ -54,7 +59,7 @@ public enum GitcrawlStatusSnapshot {
             state: state,
             summary: Self.summary(counts: counts),
             configPath: Self.configPath(for: installation)?.path,
-            databasePath: Self.databasePath(for: installation),
+            databasePath: context.databasePath,
             lastSyncAt: latestUpdatedAt,
             counts: counts,
             freshness: freshness)
@@ -66,13 +71,39 @@ public enum GitcrawlStatusSnapshot {
         return visible.isEmpty ? "Git Crawl status is current" : visible.joined(separator: ", ")
     }
 
-    private static func reportURL(for installation: CrawlAppInstallation) -> URL? {
-        if let databasePath = Self.databasePath(for: installation) {
-            if let reportURL = Self.adjacentReportURL(databasePath: databasePath) {
-                return reportURL
-            }
+    private struct ReportContext {
+        var reportURL: URL
+        var databasePath: String?
+        var repository: String?
+    }
+
+    private static func reportContext(for installation: CrawlAppInstallation) -> ReportContext? {
+        if let databasePath = Self.configuredDatabasePath(for: installation) {
+            guard let reportURL = Self.adjacentReportURL(databasePath: databasePath) else { return nil }
+            return ReportContext(
+                reportURL: reportURL,
+                databasePath: databasePath,
+                repository: Self.repository(fromDatabasePath: databasePath) ?? Self.reportRepository(reportURL))
         }
 
+        if let databasePath = Self.defaultDatabasePath(for: installation),
+           let reportURL = Self.adjacentReportURL(databasePath: databasePath)
+        {
+            return ReportContext(
+                reportURL: reportURL,
+                databasePath: databasePath,
+                repository: Self.repository(fromDatabasePath: databasePath) ?? Self.reportRepository(reportURL))
+        }
+
+        guard let reportURL = Self.latestStoreReportURL() else { return nil }
+        let repository = Self.reportRepository(reportURL)
+        return ReportContext(
+            reportURL: reportURL,
+            databasePath: Self.storeDatabasePath(reportURL: reportURL, repository: repository),
+            repository: repository)
+    }
+
+    private static func latestStoreReportURL() -> URL? {
         let storesURL = URL(fileURLWithPath: PathExpander.expandHome("~/.config/gitcrawl/stores"), isDirectory: true)
         guard let storeURLs = try? FileManager.default.contentsOfDirectory(
             at: storesURL,
@@ -88,6 +119,29 @@ public enum GitcrawlStatusSnapshot {
             candidates.append((reportURL, values?.contentModificationDate ?? .distantPast))
         }
         return candidates.sorted { $0.modifiedAt > $1.modifiedAt }.first?.url
+    }
+
+    private static func storeDatabasePath(reportURL: URL, repository: String?) -> String? {
+        let storeURL = reportURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let dataURL = storeURL.appendingPathComponent("data", isDirectory: true)
+        if let repository {
+            let filename = repository.replacingOccurrences(of: "/", with: "__") + ".sync.db"
+            let databaseURL = dataURL.appendingPathComponent(filename)
+            if FileManager.default.fileExists(atPath: databaseURL.path) {
+                return databaseURL.path
+            }
+        }
+        let databaseURLs = (try? FileManager.default.contentsOfDirectory(
+            at: dataURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles])) ?? []
+        return databaseURLs
+            .filter { ["db", "sqlite", "sqlite3"].contains($0.pathExtension.lowercased()) }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            .first?
+            .path
     }
 
     private static func adjacentReportURL(databasePath: String) -> URL? {
@@ -118,13 +172,25 @@ public enum GitcrawlStatusSnapshot {
         return nil
     }
 
-    private static func databasePath(for installation: CrawlAppInstallation) -> String? {
+    private static func repository(fromDatabasePath databasePath: String) -> String? {
+        let filename = URL(fileURLWithPath: databasePath).lastPathComponent
+        let stem = filename.replacingOccurrences(of: ".sync.db", with: "")
+        let parts = stem.split(separator: "__", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        return "\(parts[0])/\(parts[1])"
+    }
+
+    private static func configuredDatabasePath(for installation: CrawlAppInstallation) -> String? {
         if let configURL = Self.configPath(for: installation),
            let content = try? String(contentsOf: configURL, encoding: .utf8),
            let parsed = Self.tomlString("db_path", in: content)
         {
             return PathExpander.expandHome(parsed)
         }
+        return nil
+    }
+
+    private static func defaultDatabasePath(for installation: CrawlAppInstallation) -> String? {
         return installation.manifest.paths.defaultDatabase.map { PathExpander.expandHome($0) }
     }
 

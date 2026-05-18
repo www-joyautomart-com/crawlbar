@@ -686,6 +686,18 @@ public struct CrawlAppStatus: Codable, Equatable, Sendable, Identifiable {
 }
 
 public extension CrawlAppStatus {
+    var isRecoverableGraincrawlSourceFailure: Bool {
+        guard self.appID == BuiltInCrawlApps.graincrawlID, self.state == .error else { return false }
+        guard !Self.summaryLooksLikeActionFailure(self.summary) else { return false }
+        let text = ([self.summary] + self.errors + self.warnings)
+            .joined(separator: "\n")
+            .lowercased()
+        return text.contains("granola access token")
+            || text.contains("unsupported cache version")
+            || text.contains("private-api reports")
+            || text.contains("desktop-cache reports")
+    }
+
     func mergingActionFailure(_ failure: CrawlAppStatus) -> CrawlAppStatus {
         guard self.appID == failure.appID else { return failure }
         return CrawlAppStatus(
@@ -740,6 +752,20 @@ public extension CrawlAppStatus {
             messages.append(message)
         }
         return messages
+    }
+
+    private static func summaryLooksLikeActionFailure(_ summary: String) -> Bool {
+        let trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return [
+            "refresh:",
+            "sync:",
+            "desktop-cache-import:",
+            "doctor:",
+            "unlock:",
+            "query:",
+            "search:",
+            "export-md:",
+        ].contains { trimmed.hasPrefix($0) }
     }
 }
 

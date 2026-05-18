@@ -528,6 +528,10 @@ enum CrawlBarSelfTest {
         try Self.expect(
             genericQueryResult.stdout == "search --json openclaw/openclaw --query manifest",
             "gitcrawl query infers repository from latest report when db filename is generic")
+        let genericStatus = GitcrawlStatusSnapshot.status(for: genericInstallation)
+        try Self.expect(
+            genericStatus?.databasePath == genericDatabaseURL.path,
+            "gitcrawl status keeps the database path that supplied its adjacent report")
         let nativeSearchManifest = CrawlAppManifest(
             id: BuiltInCrawlApps.gitcrawlID,
             displayName: "Git Crawl",
@@ -559,7 +563,9 @@ enum CrawlBarSelfTest {
             description: "A git crawler",
             binary: .init(name: scriptURL.path),
             branding: .init(symbolName: "tray", accentColor: "#123456"),
-            paths: .init(defaultConfig: missingReportConfigURL.path),
+            paths: .init(
+                defaultConfig: missingReportConfigURL.path,
+                defaultDatabase: directory.appendingPathComponent("wrong__repo.sync.db").path),
             commands: ["query": ["search", "--json"]],
             capabilities: [.search])
         let missingReportInstallation = CrawlAppInstallation(manifest: missingReportManifest, binaryPath: scriptURL.path)
@@ -571,6 +577,9 @@ enum CrawlBarSelfTest {
         try Self.expect(
             missingReportQueryResult.stdout == "search --json manifest",
             "gitcrawl query does not infer repository from unrelated global reports")
+        try Self.expect(
+            GitcrawlStatusSnapshot.status(for: missingReportInstallation) == nil,
+            "gitcrawl status does not read unrelated global reports for explicit database configs")
     }
 
     private static func testActionFailuresPreserveStatusMetadata() throws {
@@ -619,6 +628,22 @@ enum CrawlBarSelfTest {
             summary: "status failed")
         let richest = CrawlAppStatus.richestMetadataStatus(emptyRefreshed, fallback: metadata)
         try Self.expect(richest == metadata, "previous rich metadata wins over empty refreshed status")
+
+        let recoverableGraincrawlStatus = CrawlAppStatus(
+            appID: BuiltInCrawlApps.graincrawlID,
+            state: .error,
+            summary: "private-api reports expired token, desktop-cache reports unsupported cache version 8")
+        try Self.expect(
+            recoverableGraincrawlStatus.isRecoverableGraincrawlSourceFailure,
+            "graincrawl source status failures can render as stale")
+        let graincrawlActionFailure = recoverableGraincrawlStatus.mergingActionFailure(CrawlAppStatus(
+            appID: BuiltInCrawlApps.graincrawlID,
+            state: .error,
+            summary: "refresh: Granola access token expired",
+            errors: ["Granola access token expired"]))
+        try Self.expect(
+            !graincrawlActionFailure.isRecoverableGraincrawlSourceFailure,
+            "graincrawl action failures stay visible as errors")
     }
 
     private static func testActionLogStoreReadsRecentResults() throws {

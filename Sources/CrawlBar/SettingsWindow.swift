@@ -839,7 +839,7 @@ struct CrawlBarSidebarRow: View {
         if !self.app.enabled { return .disabled }
         if self.binaryPath == nil { return .needsConfig }
         let state = self.status?.state ?? .unknown
-        if self.app.id == BuiltInCrawlApps.graincrawlID, state == .error {
+        if self.status?.isRecoverableGraincrawlSourceFailure == true {
             return .stale
         }
         return state
@@ -1095,12 +1095,12 @@ struct CrawlBarAppDetailView: View {
         CrawlBarPanel(title: "Latest Run") {
             if let latestResult {
                 HStack(spacing: 8) {
-                    CrawlBarStatusDot(state: latestResult.succeeded ? .current : self.issueState)
+                    CrawlBarStatusDot(state: latestResult.succeeded ? .current : .error)
                     Text(Self.actionTitle(latestResult.action))
                         .font(.callout.weight(.medium))
                     Text(latestResult.succeeded ? "finished" : "failed")
                         .font(.callout)
-                        .foregroundStyle(latestResult.succeeded ? Color.secondary : self.issueColor)
+                        .foregroundStyle(latestResult.succeeded ? Color.secondary : Color.red)
                     Spacer(minLength: 8)
                     Text(CrawlBarDateText.relative(latestResult.finishedAt))
                         .font(.caption)
@@ -1111,7 +1111,7 @@ struct CrawlBarAppDetailView: View {
                 if let output = Self.resultMessage(latestResult) {
                     Text(output)
                         .font(.caption)
-                        .foregroundStyle(latestResult.succeeded ? Color.secondary : self.issueColor)
+                        .foregroundStyle(latestResult.succeeded ? Color.secondary : Color.red)
                         .lineLimit(3)
                         .truncationMode(.tail)
                         .textSelection(.enabled)
@@ -1440,7 +1440,7 @@ struct CrawlBarAppDetailView: View {
     }
 
     private var issueState: CrawlAppState {
-        self.app.id == BuiltInCrawlApps.graincrawlID ? .stale : .error
+        self.status?.isRecoverableGraincrawlSourceFailure == true ? .stale : .error
     }
 
     private var issueColor: Color {
@@ -1529,7 +1529,7 @@ struct CrawlBarAppDetailView: View {
         if !self.app.enabled { return .disabled }
         if self.installation?.binaryPath == nil { return .needsConfig }
         let state = self.status?.state ?? .unknown
-        if self.app.id == BuiltInCrawlApps.graincrawlID, state == .error {
+        if self.status?.isRecoverableGraincrawlSourceFailure == true {
             return .stale
         }
         return state
