@@ -391,7 +391,8 @@ enum CrawlBarCLI {
             } else {
                 config.apps[index].configValues[key] = value
             }
-            try store.save(config)
+            let clearMissingSecretIDsByAppID: [CrawlAppID: Set<String>] = value.nilIfBlank == nil ? [appID: [key]] : [:]
+            try store.save(config, clearMissingSecretIDsByAppID: clearMissingSecretIDsByAppID)
             if let installation = try registry.installation(for: appID),
                let appConfig = config.appConfig(for: appID)
             {
@@ -405,11 +406,10 @@ enum CrawlBarCLI {
                     resolvedValues[key] = value
                 }
                 nativeAppConfig.configValues = resolvedValues
-                let clearMissingSecretIDs: Set<String> = value.nilIfBlank == nil ? [key] : []
                 try nativeConfigStore.write(
                     appConfig: nativeAppConfig,
                     manifest: installation.manifest,
-                    clearMissingSecretIDs: clearMissingSecretIDs)
+                    clearMissingSecretIDs: clearMissingSecretIDsByAppID[appID] ?? [])
             }
             if options.json {
                 try CLIOutput.writeJSON(["app_id": appID.rawValue, "key": key, "updated": "true"])

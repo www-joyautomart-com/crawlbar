@@ -156,7 +156,9 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
                 refreshFrequency: self.refreshFrequency,
                 manifestDirectories: self.manifestDirectories,
                 apps: self.apps)
-            try self.store.save(config)
+            try self.store.save(
+                config,
+                clearMissingSecretIDsByAppID: self.clearedNativeSecretIDsByAppID)
             try self.nativeConfigStore.write(
                 config: config,
                 clearMissingSecretIDsByAppID: self.clearedNativeSecretIDsByAppID)

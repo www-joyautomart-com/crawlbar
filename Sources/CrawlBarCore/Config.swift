@@ -243,9 +243,9 @@ public struct CrawlBarConfigStore: @unchecked Sendable {
         return config
     }
 
-    public func save(_ config: CrawlBarConfig) throws {
+    public func save(_ config: CrawlBarConfig, clearMissingSecretIDsByAppID: [CrawlAppID: Set<String>] = [:]) throws {
         let normalized = config.normalized()
-        let persisted = try self.configForDisk(normalized)
+        let persisted = try self.configForDisk(normalized, clearMissingSecretIDsByAppID: clearMissingSecretIDsByAppID)
         let data: Data
         do {
             data = try CrawlCoding.makeJSONEncoder().encode(persisted)
@@ -290,7 +290,11 @@ public struct CrawlBarConfigStore: @unchecked Sendable {
         return copy
     }
 
-    private func configForDisk(_ config: CrawlBarConfig) throws -> CrawlBarConfig {
+    private func configForDisk(
+        _ config: CrawlBarConfig,
+        clearMissingSecretIDsByAppID: [CrawlAppID: Set<String>] = [:])
+        throws -> CrawlBarConfig
+    {
         let manifests = self.manifestsByID(config: config)
         var copy = config
         for index in copy.apps.indices {
@@ -298,6 +302,8 @@ public struct CrawlBarConfigStore: @unchecked Sendable {
             for option in manifest.configOptions where option.kind == .secret {
                 if let value = copy.apps[index].configValues.removeValue(forKey: option.id) {
                     try self.secretStore.set(value.nilIfBlank, appID: copy.apps[index].id, optionID: option.id)
+                } else if clearMissingSecretIDsByAppID[copy.apps[index].id]?.contains(option.id) == true {
+                    try self.secretStore.set(nil, appID: copy.apps[index].id, optionID: option.id)
                 }
             }
         }
