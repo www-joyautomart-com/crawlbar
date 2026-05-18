@@ -219,11 +219,11 @@ enum CrawlBarCLI {
             installations = [installation]
         } else {
             installations = try registry.availableInstallations(includeSecrets: false)
-                .filter { Self.queryAction(for: $0, allApps: true) != nil }
+                .filter { Self.queryAction(for: $0, queryArguments: queryArguments, allApps: true) != nil }
         }
 
         let results = installations.map { installation -> CrawlCommandResult in
-            guard let action = Self.queryAction(for: installation, allApps: isAllApps) else {
+            guard let action = Self.queryAction(for: installation, queryArguments: queryArguments, allApps: isAllApps) else {
                 return CrawlCommandResult(
                     appID: installation.id,
                     action: "query",
@@ -269,11 +269,21 @@ enum CrawlBarCLI {
         }
     }
 
-    private static func queryAction(for installation: CrawlAppInstallation, allApps: Bool = false) -> String? {
-        if allApps, installation.manifest.commands["search"] != nil {
+    private static func queryAction(
+        for installation: CrawlAppInstallation,
+        queryArguments: [String],
+        allApps: Bool = false)
+        -> String?
+    {
+        if (allApps || !Self.queryLooksLikeSQL(queryArguments)), installation.manifest.commands["search"] != nil {
             return "search"
         }
         return ["query", "sql", "search"].first { installation.manifest.commands[$0] != nil }
+    }
+
+    private static func queryLooksLikeSQL(_ arguments: [String]) -> Bool {
+        let query = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return ["select ", "with ", "pragma ", "explain "].contains { query.hasPrefix($0) }
     }
 
     private static func backup(

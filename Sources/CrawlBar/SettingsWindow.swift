@@ -1800,6 +1800,12 @@ struct CrawlBarConfigOptionField: View {
             case .secret:
                 SecureField(self.option.placeholder ?? "Value", text: self.$value)
                     .textFieldStyle(.roundedBorder)
+                Button {
+                    self.value = ""
+                } label: {
+                    Label("Clear Saved Secret", systemImage: "key.slash")
+                }
+                .buttonStyle(.link)
             case .boolean:
                 Toggle(self.option.label, isOn: self.booleanBinding)
             case .choice:
