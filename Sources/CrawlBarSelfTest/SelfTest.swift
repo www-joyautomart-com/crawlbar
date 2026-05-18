@@ -90,7 +90,7 @@ enum CrawlBarSelfTest {
           "commands": {
             "status": {"title": "Status", "argv": ["objectcrawl", "status", "--json"], "json": true},
             "sync": {"title": "Sync", "argv": ["objectcrawl", "sync", "--json"], "json": true, "mutates": true},
-            "sql": {"title": "Query", "argv": ["objectcrawl", "--json", "sql", "select count(*) from things"], "json": true},
+            "query": {"title": "Query", "argv": ["objectcrawl", "--json", "sql", "select count(*) from things"], "json": true},
             "tap": {"title": "Desktop", "argv": ["objectcrawl", "tap", "--json"], "json": true, "mutates": true}
           },
           "capabilities": ["metadata", "status", "sync", "tap", "git-share"],
@@ -113,7 +113,7 @@ enum CrawlBarSelfTest {
             throw SelfTestError.failed("crawlkit command-object manifests load from disk")
         }
         try Self.expect(objectManifest.commands["status"] == ["status", "--json"], "crawlkit command argv strips binary")
-        try Self.expect(objectManifest.commands["sql"] == ["--json", "sql"], "crawlkit SQL sample query is stripped")
+        try Self.expect(objectManifest.commands["query"] == ["--json", "sql"], "crawlkit query sample SQL is stripped")
         try Self.expect(objectManifest.commands["refresh"] == ["sync", "--json"], "crawlkit sync command aliases to refresh")
         try Self.expect(objectManifest.capabilities.contains(.refresh), "crawlkit sync capability maps to refresh")
         try Self.expect(objectManifest.capabilities.contains(.search), "crawlkit SQL/query capability maps to search")
@@ -435,11 +435,11 @@ enum CrawlBarSelfTest {
         let queryResult = try CrawlCommandRunner().run(
             installation: installation,
             action: "query",
-            extraArguments: ["manifest"],
+            extraArguments: ["stale", "branches"],
             timeoutSeconds: 5)
         try Self.expect(
-            queryResult.stdout == "search --json openclaw/openclaw --query manifest",
-            "gitcrawl query infers repository and query flag")
+            queryResult.stdout == "search --json openclaw/openclaw --query stale branches",
+            "gitcrawl query infers repository and joins query text")
     }
 
     private static func testActionFailuresPreserveStatusMetadata() throws {

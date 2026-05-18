@@ -357,10 +357,18 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
     }
 
     private static func normalizedCommandArguments(_ arguments: [String], action: String) -> [String] {
-        guard action == "sql", let last = arguments.last?.nilIfBlank, last.lowercased().hasPrefix("select ") else {
+        guard (action == "sql" || action == "query"),
+              let last = arguments.last?.nilIfBlank,
+              Self.isSampleSQL(last)
+        else {
             return arguments
         }
         return Array(arguments.dropLast())
+    }
+
+    private static func isSampleSQL(_ value: String) -> Bool {
+        let lowercased = value.lowercased()
+        return lowercased.hasPrefix("select ") || lowercased.hasPrefix("with ")
     }
 
     private static func normalizedCommands(_ commands: [String: [String]]) -> [String: [String]] {

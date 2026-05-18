@@ -234,7 +234,7 @@ public struct CrawlCommandRunner: @unchecked Sendable {
         }
 
         if Self.gitcrawlQueryNeedsRepository(action: action, extraArguments: extraArguments) {
-            return commandArguments + [repository, "--query", extraArguments[0]]
+            return commandArguments + [repository, "--query", extraArguments.joined(separator: " ")]
         }
 
         if Self.gitcrawlRefreshNeedsRepository(action: action, commandArguments: commandArguments) {
@@ -245,7 +245,7 @@ public struct CrawlCommandRunner: @unchecked Sendable {
     }
 
     private static func gitcrawlQueryNeedsRepository(action: String, extraArguments: [String]) -> Bool {
-        action == "query" && extraArguments.count == 1 && !extraArguments.contains("--query")
+        action == "query" && !extraArguments.isEmpty && !extraArguments.contains("--query")
     }
 
     private static func gitcrawlRefreshNeedsRepository(action: String, commandArguments: [String]) -> Bool {
