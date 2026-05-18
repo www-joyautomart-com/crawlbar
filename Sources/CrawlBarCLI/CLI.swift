@@ -201,8 +201,9 @@ enum CrawlBarCLI {
             throw CLIError.usage("query requires text or SQL")
         }
 
+        let isAllApps = options.appID == nil || options.appID == CrawlAppID(rawValue: "all")
         let installations: [CrawlAppInstallation]
-        if let appID = options.appID, appID != CrawlAppID(rawValue: "all") {
+        if !isAllApps, let appID = options.appID {
             guard let installation = try registry.installation(for: appID, includeSecrets: false) else {
                 throw CLIError.usage("unknown app: \(appID.rawValue)")
             }
@@ -218,7 +219,7 @@ enum CrawlBarCLI {
             installations = [installation]
         } else {
             installations = try registry.availableInstallations(includeSecrets: false)
-                .filter { Self.queryAction(for: $0) != nil }
+                .filter(Self.supportsAllAppQuery)
         }
 
         let results = installations.map { installation -> CrawlCommandResult in
@@ -261,13 +262,22 @@ enum CrawlBarCLI {
             }
         }
 
-        if results.contains(where: { !$0.succeeded }) {
+        let hasFailures = results.contains { !$0.succeeded }
+        let hasSuccesses = results.contains { $0.succeeded }
+        if hasFailures, (!isAllApps || !hasSuccesses) {
             Foundation.exit(1)
         }
     }
 
     private static func queryAction(for installation: CrawlAppInstallation) -> String? {
         ["query", "sql", "search"].first { installation.manifest.commands[$0] != nil }
+    }
+
+    private static func supportsAllAppQuery(_ installation: CrawlAppInstallation) -> Bool {
+        guard let action = Self.queryAction(for: installation),
+              let arguments = installation.manifest.commands[action]
+        else { return false }
+        return action == "search" || arguments.contains("search")
     }
 
     private static func backup(
