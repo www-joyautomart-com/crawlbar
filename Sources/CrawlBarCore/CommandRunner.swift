@@ -114,7 +114,11 @@ public struct CrawlCommandRunner: @unchecked Sendable {
         guard var arguments = installation.manifest.commands[action] else {
             throw CrawlCommandRunnerError.commandUnavailable(appID: installation.id, action: action)
         }
-        arguments.append(contentsOf: extraArguments)
+        arguments = Self.commandArguments(
+            for: installation,
+            action: action,
+            commandArguments: arguments,
+            extraArguments: extraArguments)
 
         let executableName = installation.binaryPath ?? installation.manifest.binary.name
         guard let executablePath = self.resolver.resolve(executableName) else {
@@ -214,5 +218,41 @@ public struct CrawlCommandRunner: @unchecked Sendable {
             stderr: self.redactor.redact(stderr),
             startedAt: startedAt,
             finishedAt: Date())
+    }
+
+    private static func commandArguments(
+        for installation: CrawlAppInstallation,
+        action: String,
+        commandArguments: [String],
+        extraArguments: [String])
+        -> [String]
+    {
+        guard installation.id == BuiltInCrawlApps.gitcrawlID,
+              let repository = GitcrawlStatusSnapshot.repository(for: installation)
+        else {
+            return commandArguments + extraArguments
+        }
+
+        if Self.gitcrawlQueryNeedsRepository(action: action, extraArguments: extraArguments) {
+            return commandArguments + [repository, "--query", extraArguments[0]]
+        }
+
+        if Self.gitcrawlRefreshNeedsRepository(action: action, commandArguments: commandArguments) {
+            return commandArguments + [repository] + extraArguments
+        }
+
+        return commandArguments + extraArguments
+    }
+
+    private static func gitcrawlQueryNeedsRepository(action: String, extraArguments: [String]) -> Bool {
+        action == "query" && extraArguments.count == 1 && !extraArguments.contains("--query")
+    }
+
+    private static func gitcrawlRefreshNeedsRepository(action: String, commandArguments: [String]) -> Bool {
+        guard action == "refresh" || action == "sync",
+              let command = commandArguments.first,
+              command == "refresh" || command == "sync"
+        else { return false }
+        return !commandArguments.dropFirst().contains { !$0.hasPrefix("-") && $0.contains("/") }
     }
 }

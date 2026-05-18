@@ -12,6 +12,7 @@ enum CrawlBarSelfTest {
         try Self.testStatusMapperNormalizesCounts()
         try Self.testActionFailuresPreserveStatusMetadata()
         try Self.testConfigValuesReachCommandEnvironment()
+        try Self.testGitcrawlCommandArgumentsInferRepository()
         try Self.testCommandTimeoutEscalates()
         try Self.testDatabaseBackupCopiesFiles()
         try Self.testRedactorScrubsSecrets()
@@ -88,7 +89,7 @@ enum CrawlBarSelfTest {
           "commands": {
             "status": {"title": "Status", "argv": ["objectcrawl", "status", "--json"], "json": true},
             "sync": {"title": "Sync", "argv": ["objectcrawl", "sync", "--json"], "json": true, "mutates": true},
-            "sql": {"title": "Query", "argv": ["objectcrawl", "sql"], "json": true},
+            "sql": {"title": "Query", "argv": ["objectcrawl", "--json", "sql", "select count(*) from things"], "json": true},
             "tap": {"title": "Desktop", "argv": ["objectcrawl", "tap", "--json"], "json": true, "mutates": true}
           },
           "capabilities": ["metadata", "status", "sync", "tap", "git-share"],
@@ -111,6 +112,7 @@ enum CrawlBarSelfTest {
             throw SelfTestError.failed("crawlkit command-object manifests load from disk")
         }
         try Self.expect(objectManifest.commands["status"] == ["status", "--json"], "crawlkit command argv strips binary")
+        try Self.expect(objectManifest.commands["sql"] == ["--json", "sql"], "crawlkit SQL sample query is stripped")
         try Self.expect(objectManifest.commands["refresh"] == ["sync", "--json"], "crawlkit sync command aliases to refresh")
         try Self.expect(objectManifest.capabilities.contains(.refresh), "crawlkit sync capability maps to refresh")
         try Self.expect(objectManifest.capabilities.contains(.search), "crawlkit SQL/query capability maps to search")
@@ -323,6 +325,47 @@ enum CrawlBarSelfTest {
             extraArguments: ["select count(*) from items"],
             timeoutSeconds: 5)
         try Self.expect(queryResult.stdout == "from-config|query select count(*) from items", "query arguments reach crawler commands")
+    }
+
+    private static func testGitcrawlCommandArgumentsInferRepository() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("crawlbar-gitcrawl-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let scriptURL = directory.appendingPathComponent("print-args.sh")
+        try Data("""
+        #!/bin/sh
+        printf '%s' "$*"
+        """.utf8).write(to: scriptURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+
+        let configURL = directory.appendingPathComponent("gitcrawl.toml")
+        let databaseURL = directory.appendingPathComponent("openclaw__openclaw.sync.db")
+        try Data("db_path = \"\(databaseURL.path)\"\n".utf8).write(to: configURL)
+
+        let manifest = CrawlAppManifest(
+            id: BuiltInCrawlApps.gitcrawlID,
+            displayName: "Git Crawl",
+            description: "A git crawler",
+            binary: .init(name: scriptURL.path),
+            branding: .init(symbolName: "tray", accentColor: "#123456"),
+            paths: .init(defaultConfig: configURL.path),
+            commands: ["refresh": ["sync", "--json"], "query": ["search", "--json"]],
+            capabilities: [.refresh, .search])
+        let installation = CrawlAppInstallation(manifest: manifest, binaryPath: scriptURL.path)
+
+        let refreshResult = try CrawlCommandRunner().run(installation: installation, action: "refresh", timeoutSeconds: 5)
+        try Self.expect(refreshResult.stdout == "sync --json openclaw/openclaw", "gitcrawl refresh infers repository")
+
+        let queryResult = try CrawlCommandRunner().run(
+            installation: installation,
+            action: "query",
+            extraArguments: ["manifest"],
+            timeoutSeconds: 5)
+        try Self.expect(
+            queryResult.stdout == "search --json openclaw/openclaw --query manifest",
+            "gitcrawl query infers repository and query flag")
     }
 
     private static func testActionFailuresPreserveStatusMetadata() throws {

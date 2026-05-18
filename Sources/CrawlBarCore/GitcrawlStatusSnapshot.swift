@@ -1,6 +1,17 @@
 import Foundation
 
 public enum GitcrawlStatusSnapshot {
+    public static func repository(for installation: CrawlAppInstallation) -> String? {
+        guard installation.id == BuiltInCrawlApps.gitcrawlID,
+              let databasePath = Self.databasePath(for: installation)
+        else { return nil }
+        let filename = URL(fileURLWithPath: databasePath).lastPathComponent
+        let stem = filename.replacingOccurrences(of: ".sync.db", with: "")
+        let parts = stem.split(separator: "__", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        return "\(parts[0])/\(parts[1])"
+    }
+
     public static func status(for installation: CrawlAppInstallation) -> CrawlAppStatus? {
         guard installation.id == BuiltInCrawlApps.gitcrawlID else { return nil }
         guard let reportURL = Self.reportURL(for: installation),
