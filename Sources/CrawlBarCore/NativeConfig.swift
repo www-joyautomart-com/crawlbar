@@ -7,10 +7,18 @@ public struct CrawlNativeConfigStore: @unchecked Sendable {
         self.fileManager = fileManager
     }
 
-    public func resolvedConfigValues(appConfig: CrawlBarAppConfig, manifest: CrawlAppManifest) -> [String: String] {
+    public func resolvedConfigValues(
+        appConfig: CrawlBarAppConfig,
+        manifest: CrawlAppManifest,
+        includeSecrets: Bool = true)
+        -> [String: String]
+    {
         let path = self.configPath(appConfig: appConfig, manifest: manifest)
         let nativeValues = path.flatMap { try? self.read(path: $0, manifest: manifest) } ?? [:]
-        return nativeValues.merging(appConfig.configValues) { _, explicit in explicit }
+        let merged = nativeValues.merging(appConfig.configValues) { _, explicit in explicit }
+        guard !includeSecrets else { return merged }
+        let secretIDs = Set(manifest.configOptions.filter { $0.kind == .secret }.map(\.id))
+        return merged.filter { !secretIDs.contains($0.key) }
     }
 
     public func write(appConfig: CrawlBarAppConfig, manifest: CrawlAppManifest) throws {
@@ -79,6 +87,9 @@ public struct CrawlNativeConfigStore: @unchecked Sendable {
         for option in manifest.configOptions {
             guard let configKey = option.configKey?.nilIfBlank else { continue }
             guard let value = values[option.id]?.nilIfBlank else {
+                if option.kind == .secret {
+                    continue
+                }
                 Self.remove(configKey: configKey, in: &lines)
                 continue
             }

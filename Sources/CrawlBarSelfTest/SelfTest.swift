@@ -183,6 +183,9 @@ enum CrawlBarSelfTest {
         try Self.expect(
             nativeStore.resolvedConfigValues(appConfig: appConfig, manifest: manifest)["openai_api_key"] == "from-file",
             "native TOML config values load")
+        try Self.expect(
+            nativeStore.resolvedConfigValues(appConfig: appConfig, manifest: manifest, includeSecrets: false)["openai_api_key"] == nil,
+            "native TOML secrets stay out of non-secret loads")
 
         appConfig.configValues = nativeStore.resolvedConfigValues(appConfig: appConfig, manifest: manifest)
         appConfig.configValues["embedding_model"] = "text-embedding-3-large"
@@ -195,7 +198,7 @@ enum CrawlBarSelfTest {
         appConfig.configValues.removeValue(forKey: "openai_api_key")
         try nativeStore.write(appConfig: appConfig, manifest: manifest)
         let clearedContent = try String(contentsOf: configURL, encoding: .utf8)
-        try Self.expect(!clearedContent.contains("api_key ="), "native TOML keys clear when removed")
+        try Self.expect(clearedContent.contains("api_key = \"from-file\""), "native TOML secret keys preserve when omitted")
     }
 
     private static func testStatusMapperNormalizesCounts() throws {

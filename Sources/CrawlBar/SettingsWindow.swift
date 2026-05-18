@@ -114,7 +114,10 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
                     showInMenuBar: installation.manifest.availability == .available)
                 guard let manifest = manifests[appConfig.id] else { return appConfig }
                 var copy = appConfig
-                copy.configValues = self.nativeConfigStore.resolvedConfigValues(appConfig: appConfig, manifest: manifest)
+                copy.configValues = self.nativeConfigStore.resolvedConfigValues(
+                    appConfig: appConfig,
+                    manifest: manifest,
+                    includeSecrets: false)
                 return copy
             }
             self.refreshFrequency = config.refreshFrequency

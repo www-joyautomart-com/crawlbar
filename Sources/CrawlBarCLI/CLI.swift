@@ -203,7 +203,7 @@ enum CrawlBarCLI {
 
         let installations: [CrawlAppInstallation]
         if let appID = options.appID, appID != CrawlAppID(rawValue: "all") {
-            guard let installation = try registry.installation(for: appID, includeSecrets: true) else {
+            guard let installation = try registry.installation(for: appID, includeSecrets: false) else {
                 throw CLIError.usage("unknown app: \(appID.rawValue)")
             }
             guard installation.manifest.availability == .available else {
@@ -217,7 +217,7 @@ enum CrawlBarCLI {
             }
             installations = [installation]
         } else {
-            installations = try registry.availableInstallations(includeSecrets: true)
+            installations = try registry.availableInstallations(includeSecrets: false)
         }
 
         let results = installations.map { installation -> CrawlCommandResult in
@@ -310,7 +310,7 @@ enum CrawlBarCLI {
         statusService: CrawlStatusService)
         throws -> CrawlAppStatus
     {
-        guard let installation = try registry.installation(for: appID, includeSecrets: true) else {
+        guard let installation = try registry.installationForStatus(for: appID) else {
             throw CLIError.usage("unknown app: \(appID.rawValue)")
         }
         return statusService.status(for: installation, timeoutSeconds: 30)

@@ -31,7 +31,10 @@ public struct CrawlAppRegistry: @unchecked Sendable {
         let config = loadedConfig.normalized(knownIDs: knownIDs)
         return config.apps.compactMap { appConfig in
             guard let manifest = manifests[appConfig.id] else { return nil }
-            let nativeAppConfig = self.appConfigWithNativeValues(appConfig, manifest: manifest)
+            let nativeAppConfig = self.appConfigWithNativeValues(
+                appConfig,
+                manifest: manifest,
+                includeSecrets: includeSecrets)
             let isAvailable = manifest.availability == .available
             let enabled = isAvailable && nativeAppConfig.enabled
             guard includeDisabled || enabled else { return nil }
@@ -79,9 +82,17 @@ public struct CrawlAppRegistry: @unchecked Sendable {
         try self.installations(includeDisabled: false, includeSecrets: includeSecrets).filter { $0.binaryPath != nil }
     }
 
-    public func appConfigWithNativeValues(_ appConfig: CrawlBarAppConfig, manifest: CrawlAppManifest) -> CrawlBarAppConfig {
+    public func appConfigWithNativeValues(
+        _ appConfig: CrawlBarAppConfig,
+        manifest: CrawlAppManifest,
+        includeSecrets: Bool = true)
+        -> CrawlBarAppConfig
+    {
         var copy = appConfig
-        copy.configValues = self.nativeConfigStore.resolvedConfigValues(appConfig: appConfig, manifest: manifest)
+        copy.configValues = self.nativeConfigStore.resolvedConfigValues(
+            appConfig: appConfig,
+            manifest: manifest,
+            includeSecrets: includeSecrets)
         return copy
     }
 
