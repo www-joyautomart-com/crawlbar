@@ -382,6 +382,38 @@ enum CrawlBarSelfTest {
             finishedAt: Date())
         let failedStatus = CrawlStatusMapper().status(from: failedResult, manifest: BuiltInCrawlApps.graincrawl)
         try Self.expect(failedStatus.state == .error, "crawlkit failed state maps to error")
+
+        let githubAuthMessage = """
+        [github] request GET /repos/openclaw/openclaw
+        github GET /repos/openclaw/openclaw failed with status 401: {
+          "message": "Bad credentials"
+        }
+        """
+        let githubAuthResult = CrawlCommandResult(
+            appID: BuiltInCrawlApps.gitcrawlID,
+            action: "status",
+            exitCode: 1,
+            stdout: "",
+            stderr: githubAuthMessage,
+            startedAt: Date(),
+            finishedAt: Date())
+        let githubAuthStatus = CrawlStatusMapper().status(from: githubAuthResult, manifest: BuiltInCrawlApps.gitcrawl)
+        try Self.expect(githubAuthStatus.state == .needsAuth, "gitcrawl 401 maps to auth state")
+        try Self.expect(githubAuthStatus.summary == "GitHub credentials rejected", "gitcrawl 401 uses useful summary")
+        try Self.expect(githubAuthStatus.errors.first?.contains("[github] request GET /repos/openclaw/openclaw") == true, "gitcrawl 401 preserves full stderr")
+
+        let githubServerMessage = """
+        [github] request GET /repos/openclaw/openclaw
+        github GET /repos/openclaw/openclaw failed with status 500
+        """
+        let githubServerStatus = CrawlAppStatus.commandFailure(
+            appID: BuiltInCrawlApps.gitcrawlID,
+            action: "refresh",
+            message: githubServerMessage,
+            fallback: "refresh failed")
+        try Self.expect(
+            githubServerStatus.summary == "refresh: github GET /repos/openclaw/openclaw failed with status 500",
+            "gitcrawl request trace is skipped in failure summaries")
     }
 
     private static func testConfigValuesReachCommandEnvironment() throws {
@@ -621,6 +653,33 @@ enum CrawlBarSelfTest {
         try Self.expect(merged.share == metadata.share, "action failure preserves share metadata")
         try Self.expect(merged.warnings == ["old warning"], "action failure preserves existing warnings")
         try Self.expect(merged.errors == ["network timed out"], "action failure keeps failure errors")
+
+        let githubAuthMessage = """
+        [github] request GET /repos/openclaw/openclaw
+        github GET /repos/openclaw/openclaw failed with status 401: {
+          "message": "Bad credentials"
+        }
+        """
+        let githubAuthFailure = CrawlAppStatus.commandFailure(
+            appID: BuiltInCrawlApps.gitcrawlID,
+            action: "refresh",
+            message: githubAuthMessage,
+            fallback: "refresh failed")
+        try Self.expect(githubAuthFailure.state == .needsAuth, "gitcrawl auth failure action is recoverable")
+        try Self.expect(
+            githubAuthFailure.summary == "refresh: GitHub credentials rejected",
+            "gitcrawl auth failure action summary is useful")
+
+        let githubMetadata = CrawlAppStatus(
+            appID: BuiltInCrawlApps.gitcrawlID,
+            state: .current,
+            summary: "1 repo",
+            databasePath: "/tmp/gitcrawl.db",
+            counts: [CrawlCount(id: "repositories", label: "Repositories", value: 1)])
+        let mergedGithub = githubMetadata.mergingActionFailure(githubAuthFailure)
+        try Self.expect(mergedGithub.state == .needsAuth, "action failure merge preserves auth state")
+        try Self.expect(mergedGithub.summary == "refresh: GitHub credentials rejected", "action failure merge preserves auth summary")
+        try Self.expect(mergedGithub.databasePath == githubMetadata.databasePath, "action failure merge preserves github metadata")
 
         let emptyRefreshed = CrawlAppStatus(
             appID: BuiltInCrawlApps.discrawlID,

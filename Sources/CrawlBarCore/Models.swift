@@ -704,7 +704,7 @@ public extension CrawlAppStatus {
             schemaVersion: self.schemaVersion,
             appID: self.appID,
             generatedAt: failure.generatedAt,
-            state: .error,
+            state: failure.state,
             summary: failure.summary,
             configPath: self.configPath,
             databasePath: self.databasePath,
@@ -719,6 +719,23 @@ public extension CrawlAppStatus {
             share: self.share,
             warnings: Self.mergedMessages(failure.warnings, self.warnings),
             errors: Self.mergedMessages(failure.errors, self.errors))
+    }
+
+    static func commandFailure(
+        appID: CrawlAppID,
+        action: String? = nil,
+        message: String?,
+        fallback: String)
+        -> CrawlAppStatus
+    {
+        let fullMessage = message?.nilIfBlank ?? fallback
+        let normalized = Self.normalizedCommandFailure(appID: appID, message: fullMessage)
+        let summary = [action?.nilIfBlank, normalized.summary].compactMap { $0 }.joined(separator: ": ")
+        return CrawlAppStatus(
+            appID: appID,
+            state: normalized.state,
+            summary: summary,
+            errors: [fullMessage])
     }
 
     static func richestMetadataStatus(_ preferred: CrawlAppStatus?, fallback: CrawlAppStatus?) -> CrawlAppStatus? {
@@ -766,6 +783,35 @@ public extension CrawlAppStatus {
             "search:",
             "export-md:",
         ].contains { trimmed.hasPrefix($0) }
+    }
+
+    private static func normalizedCommandFailure(appID: CrawlAppID, message: String) -> (state: CrawlAppState, summary: String) {
+        let lowered = message.lowercased()
+        if appID == BuiltInCrawlApps.gitcrawlID,
+           lowered.contains("github"),
+           (lowered.contains("bad credentials") || lowered.contains("status 401") || lowered.contains("401"))
+        {
+            return (.needsAuth, "GitHub credentials rejected")
+        }
+        return (.error, Self.firstUsefulFailureLine(in: message) ?? "Command failed")
+    }
+
+    private static func firstUsefulFailureLine(in message: String) -> String? {
+        message.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { line in
+                guard !line.isEmpty else { return false }
+                return !Self.isRequestTraceLine(line)
+            }
+    }
+
+    private static func isRequestTraceLine(_ line: String) -> Bool {
+        let lowered = line.lowercased()
+        return lowered.hasPrefix("[github] request ")
+            || lowered.hasPrefix("[slack] request ")
+            || lowered.hasPrefix("[notion] request ")
+            || lowered.hasPrefix("[discord] request ")
+            || lowered.hasPrefix("[granola] request ")
     }
 }
 

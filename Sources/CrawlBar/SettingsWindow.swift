@@ -387,16 +387,19 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
 
     nonisolated private static func actionFailureStatus(_ result: CrawlCommandResult) -> CrawlAppStatus {
         let fallback = "\(result.action) failed with exit \(result.exitCode)"
-        let summary = result.stderr.nilIfBlank ?? result.stdout.nilIfBlank ?? fallback
-        return Self.actionFailureStatus(appID: result.appID, action: result.action, message: summary)
+        return CrawlAppStatus.commandFailure(
+            appID: result.appID,
+            action: result.action,
+            message: result.stderr.nilIfBlank ?? result.stdout.nilIfBlank,
+            fallback: fallback)
     }
 
     nonisolated private static func actionFailureStatus(appID: CrawlAppID, action: String, message: String) -> CrawlAppStatus {
-        CrawlAppStatus(
+        CrawlAppStatus.commandFailure(
             appID: appID,
-            state: .error,
-            summary: "\(action): \(message)",
-            errors: [message])
+            action: action,
+            message: message,
+            fallback: "\(action) failed")
     }
 
     nonisolated private static func actionFailureStatus(

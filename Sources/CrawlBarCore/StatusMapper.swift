@@ -12,12 +12,10 @@ public struct CrawlStatusMapper: Sendable {
         -> CrawlAppStatus
     {
         guard result.succeeded else {
-            return CrawlAppStatus(
+            return CrawlAppStatus.commandFailure(
                 appID: result.appID,
-                state: .error,
-                summary: self.failureSummary(result),
-                warnings: [],
-                errors: [result.stderr.nilIfBlank ?? result.stdout.nilIfBlank ?? "Command exited \(result.exitCode)"])
+                message: result.stderr.nilIfBlank ?? result.stdout.nilIfBlank,
+                fallback: "Command failed with exit \(result.exitCode)")
         }
 
         guard let object = self.parseObject(result.stdout) else {
@@ -172,11 +170,6 @@ public struct CrawlStatusMapper: Sendable {
             databases: databases,
             freshness: freshness,
             share: self.shareStatus(in: object))
-    }
-
-    private func failureSummary(_ result: CrawlCommandResult) -> String {
-        let output = result.stderr.nilIfBlank ?? result.stdout.nilIfBlank
-        return output?.split(separator: "\n").first.map(String.init) ?? "Command failed with exit \(result.exitCode)"
     }
 
     private func parseObject(_ text: String) -> [String: Any]? {
