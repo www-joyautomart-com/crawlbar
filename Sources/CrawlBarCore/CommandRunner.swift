@@ -245,7 +245,7 @@ public struct CrawlCommandRunner: @unchecked Sendable {
     }
 
     private static func gitcrawlQueryNeedsRepository(action: String, extraArguments: [String]) -> Bool {
-        action == "query" && !extraArguments.isEmpty && !extraArguments.contains("--query")
+        (action == "query" || action == "search") && !extraArguments.isEmpty && !extraArguments.contains("--query")
     }
 
     private static func gitcrawlRefreshNeedsRepository(action: String, commandArguments: [String]) -> Bool {

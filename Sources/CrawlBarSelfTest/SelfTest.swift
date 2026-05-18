@@ -528,6 +528,24 @@ enum CrawlBarSelfTest {
         try Self.expect(
             genericQueryResult.stdout == "search --json openclaw/openclaw --query manifest",
             "gitcrawl query infers repository from latest report when db filename is generic")
+        let nativeSearchManifest = CrawlAppManifest(
+            id: BuiltInCrawlApps.gitcrawlID,
+            displayName: "Git Crawl",
+            description: "A metadata-derived git crawler",
+            binary: .init(name: scriptURL.path),
+            branding: .init(symbolName: "tray", accentColor: "#123456"),
+            paths: .init(defaultConfig: genericConfigURL.path),
+            commands: ["search": ["search", "--json"]],
+            capabilities: [.search])
+        let nativeSearchInstallation = CrawlAppInstallation(manifest: nativeSearchManifest, binaryPath: scriptURL.path)
+        let nativeSearchResult = try CrawlCommandRunner().run(
+            installation: nativeSearchInstallation,
+            action: "search",
+            extraArguments: ["manifest"],
+            timeoutSeconds: 5)
+        try Self.expect(
+            nativeSearchResult.stdout == "search --json openclaw/openclaw --query manifest",
+            "metadata-derived gitcrawl search infers repository and query flag")
 
         let missingReportConfigURL = directory.appendingPathComponent("gitcrawl-missing-report.toml")
         let missingReportDatabaseURL = directory.appendingPathComponent("other-store/data/gitcrawl.db")
