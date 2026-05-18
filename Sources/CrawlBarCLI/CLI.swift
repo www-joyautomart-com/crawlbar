@@ -221,6 +221,9 @@ enum CrawlBarCLI {
             installations = try registry.availableInstallations(includeSecrets: false)
                 .filter { Self.queryAction(for: $0, queryArguments: queryArguments, allApps: true) != nil }
         }
+        guard !installations.isEmpty else {
+            throw CLIError.usage("no query-capable crawlers are enabled and on PATH")
+        }
 
         let results = installations.map { installation -> CrawlCommandResult in
             guard let action = Self.queryAction(for: installation, queryArguments: queryArguments, allApps: isAllApps) else {
