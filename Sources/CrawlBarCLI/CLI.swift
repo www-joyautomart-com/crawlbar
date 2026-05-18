@@ -226,7 +226,10 @@ enum CrawlBarCLI {
         }
 
         let results = installations.map { installation -> CrawlCommandResult in
-            guard let action = Self.queryAction(for: installation, queryArguments: queryArguments) else {
+            guard let action = CrawlQueryActionResolver.action(
+                for: installation.manifest,
+                queryArguments: queryArguments)
+            else {
                 return CrawlCommandResult(
                     appID: installation.id,
                     action: "query",
@@ -277,18 +280,7 @@ enum CrawlBarCLI {
         queryArguments: [String])
         -> String?
     {
-        if Self.queryLooksLikeSQL(queryArguments) {
-            return ["query", "sql"].first { installation.manifest.commands[$0] != nil }
-        }
-        if installation.manifest.commands["search"] != nil {
-            return "search"
-        }
-        return ["query", "sql"].first { installation.manifest.commands[$0] != nil }
-    }
-
-    private static func queryLooksLikeSQL(_ arguments: [String]) -> Bool {
-        let query = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return ["select ", "with ", "pragma ", "explain "].contains { query.hasPrefix($0) }
+        CrawlQueryActionResolver.action(for: installation.manifest, queryArguments: queryArguments)
     }
 
     private static func backup(

@@ -13,6 +13,7 @@ enum CrawlBarSelfTest {
         try Self.testStatusMapperNormalizesCounts()
         try Self.testActionFailuresPreserveStatusMetadata()
         try Self.testActionLogStoreReadsRecentResults()
+        try Self.testQueryActionResolverSkipsSQLForPlainText()
         try Self.testConfigValuesReachCommandEnvironment()
         try Self.testGitcrawlCommandArgumentsInferRepository()
         try Self.testCommandTimeoutEscalates()
@@ -424,6 +425,37 @@ enum CrawlBarSelfTest {
             extraArguments: ["select count(*) from items"],
             timeoutSeconds: 5)
         try Self.expect(queryResult.stdout == "from-config|query select count(*) from items", "query arguments reach crawler commands")
+    }
+
+    private static func testQueryActionResolverSkipsSQLForPlainText() throws {
+        let sqlOnlyManifest = CrawlAppManifest(
+            id: CrawlAppID(rawValue: "sqlonly"),
+            displayName: "SQL Only",
+            description: "A SQL-only crawler",
+            binary: .init(name: "sqlonly"),
+            branding: .init(symbolName: "terminal", accentColor: "#123456"),
+            paths: .init(),
+            commands: ["sql": ["sql"]],
+            capabilities: [.search])
+        try Self.expect(
+            CrawlQueryActionResolver.action(for: sqlOnlyManifest, queryArguments: ["select count(*) from rows"]) == "sql",
+            "SQL-looking queries can use SQL-only crawler commands")
+        try Self.expect(
+            CrawlQueryActionResolver.action(for: sqlOnlyManifest, queryArguments: ["manifest"]) == nil,
+            "plain text queries do not fall through to SQL-only crawler commands")
+
+        let textManifest = CrawlAppManifest(
+            id: CrawlAppID(rawValue: "textcrawl"),
+            displayName: "Text Crawl",
+            description: "A text search crawler",
+            binary: .init(name: "textcrawl"),
+            branding: .init(symbolName: "terminal", accentColor: "#123456"),
+            paths: .init(),
+            commands: ["search": ["search"], "query": ["query"]],
+            capabilities: [.search])
+        try Self.expect(
+            CrawlQueryActionResolver.action(for: textManifest, queryArguments: ["manifest"]) == "search",
+            "plain text queries prefer explicit search commands")
     }
 
     private static func testGitcrawlCommandArgumentsInferRepository() throws {

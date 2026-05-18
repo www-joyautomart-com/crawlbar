@@ -462,6 +462,26 @@ public enum CrawlAppCapability: String, Codable, Equatable, Sendable, CaseIterab
     case maintain
 }
 
+public enum CrawlQueryActionResolver {
+    public static func action(for manifest: CrawlAppManifest, queryArguments: [String]) -> String? {
+        if Self.queryLooksLikeSQL(queryArguments) {
+            return ["query", "sql"].first { manifest.commands[$0] != nil }
+        }
+        if manifest.commands["search"] != nil {
+            return "search"
+        }
+        if manifest.commands["query"] != nil {
+            return "query"
+        }
+        return nil
+    }
+
+    private static func queryLooksLikeSQL(_ arguments: [String]) -> Bool {
+        let query = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return ["select ", "with ", "pragma ", "explain "].contains { query.hasPrefix($0) }
+    }
+}
+
 public enum CrawlAppState: String, Codable, Equatable, Sendable {
     case current
     case stale
