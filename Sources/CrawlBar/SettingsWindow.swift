@@ -1331,6 +1331,13 @@ struct CrawlBarAppDetailView: View {
                         Label("Unlock", systemImage: "key")
                     }
                 }
+                if self.nativeAppAvailable {
+                    Button {
+                        self.openNativeApp()
+                    } label: {
+                        Label("Open Source App", systemImage: "app")
+                    }
+                }
                 if self.commandAvailable(self.app.preferredUpdateAction ?? "update") {
                     Button {
                         self.runAction(self.app.preferredUpdateAction ?? "update")
@@ -1672,6 +1679,18 @@ struct CrawlBarAppDetailView: View {
     private func commandAvailable(_ action: String) -> Bool {
         guard self.manifest?.availability == .available else { return false }
         return self.manifest?.commands[action] != nil && self.installation?.binaryPath != nil && self.app.enabled
+    }
+
+    private var nativeAppAvailable: Bool {
+        guard let bundleIdentifier = self.manifest?.branding.bundleIdentifier?.nilIfBlank else { return false }
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil
+    }
+
+    private func openNativeApp() {
+        guard let bundleIdentifier = self.manifest?.branding.bundleIdentifier?.nilIfBlank,
+              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+        else { return }
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 
     private func optionalText(_ keyPath: WritableKeyPath<CrawlBarAppConfig, String?>) -> Binding<String> {
