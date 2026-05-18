@@ -107,12 +107,14 @@ public struct CrawlCommandRunner: @unchecked Sendable {
     public func run(
         installation: CrawlAppInstallation,
         action: String,
+        extraArguments: [String] = [],
         timeoutSeconds: TimeInterval = 120)
         throws -> CrawlCommandResult
     {
-        guard let arguments = installation.manifest.commands[action] else {
+        guard var arguments = installation.manifest.commands[action] else {
             throw CrawlCommandRunnerError.commandUnavailable(appID: installation.id, action: action)
         }
+        arguments.append(contentsOf: extraArguments)
 
         let executableName = installation.binaryPath ?? installation.manifest.binary.name
         guard let executablePath = self.resolver.resolve(executableName) else {

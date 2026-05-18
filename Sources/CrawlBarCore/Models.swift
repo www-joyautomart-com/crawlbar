@@ -343,14 +343,23 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
         throws -> [String: [String]]
     {
         if let commands = try? container.decode([String: [String]].self, forKey: .commands) {
-            return commands
+            return Self.normalizedCommands(commands)
         }
 
         let envelopes = try container.decode([String: CommandEnvelope].self, forKey: .commands)
-        return envelopes.mapValues { envelope in
+        let commands = envelopes.mapValues { envelope in
             guard envelope.argv.first == binaryName else { return envelope.argv }
             return Array(envelope.argv.dropFirst())
         }
+        return Self.normalizedCommands(commands)
+    }
+
+    private static func normalizedCommands(_ commands: [String: [String]]) -> [String: [String]] {
+        var normalized = commands
+        if normalized["refresh"] == nil, let sync = normalized["sync"] {
+            normalized["refresh"] = sync
+        }
+        return normalized
     }
 
     private static func decodeCapabilities(
@@ -381,7 +390,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
             return [.doctor]
         case "refresh", "sync":
             return [.refresh]
-        case "search":
+        case "query", "search", "sql":
             return [.search]
         case "publish":
             return [.publish]

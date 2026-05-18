@@ -30,6 +30,7 @@ swift run crawlbarctl apps --json
 crawlbar apps [--json]
 crawlbar metadata [--app gitcrawl] [--json]
 crawlbar status [--app all] [--json]
+crawlbar query [--app slacrawl|all] -- 'select count(*) from messages;'
 crawlbar doctor --app discrawl [--json]
 crawlbar refresh --app slacrawl [--json]
 crawlbar action desktop-cache-import --app discrawl [--json]

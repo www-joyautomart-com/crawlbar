@@ -88,6 +88,7 @@ enum CrawlBarSelfTest {
           "commands": {
             "status": {"title": "Status", "argv": ["objectcrawl", "status", "--json"], "json": true},
             "sync": {"title": "Sync", "argv": ["objectcrawl", "sync", "--json"], "json": true, "mutates": true},
+            "sql": {"title": "Query", "argv": ["objectcrawl", "sql"], "json": true},
             "tap": {"title": "Desktop", "argv": ["objectcrawl", "tap", "--json"], "json": true, "mutates": true}
           },
           "capabilities": ["metadata", "status", "sync", "tap", "git-share"],
@@ -110,7 +111,9 @@ enum CrawlBarSelfTest {
             throw SelfTestError.failed("crawlkit command-object manifests load from disk")
         }
         try Self.expect(objectManifest.commands["status"] == ["status", "--json"], "crawlkit command argv strips binary")
+        try Self.expect(objectManifest.commands["refresh"] == ["sync", "--json"], "crawlkit sync command aliases to refresh")
         try Self.expect(objectManifest.capabilities.contains(.refresh), "crawlkit sync capability maps to refresh")
+        try Self.expect(objectManifest.capabilities.contains(.search), "crawlkit SQL/query capability maps to search")
         try Self.expect(objectManifest.capabilities.contains(.desktopCache), "crawlkit tap capability maps to desktop cache")
         try Self.expect(objectManifest.capabilities.contains(.publish), "crawlkit git-share capability maps to publish")
         try Self.expect(diagnostics.contains { $0.path.hasSuffix("broken.json") }, "external manifest parse errors are reported")
@@ -138,6 +141,9 @@ enum CrawlBarSelfTest {
             BuiltInCrawlApps.graincrawl.commands["refresh"] == ["sync", "--source", "desktop-cache", "--json"],
             "graincrawl refresh uses desktop cache by default")
         try Self.expect(BuiltInCrawlApps.gitcrawl.commands["status"] == ["status", "--json"], "gitcrawl uses fast status command")
+        try Self.expect(BuiltInCrawlApps.gitcrawl.commands["refresh"] == ["sync", "--json"], "gitcrawl keeps refresh action wired")
+        try Self.expect(BuiltInCrawlApps.slacrawl.commands["query"] == ["sql"], "Slack exposes query action")
+        try Self.expect(BuiltInCrawlApps.graincrawl.commands["query"] == ["sql"], "graincrawl exposes query action")
         try Self.expect(BuiltInCrawlApps.gitcrawl.configSections.contains { $0.id == "github" }, "built-in config sections exist")
     }
 
@@ -284,7 +290,11 @@ enum CrawlBarSelfTest {
         let scriptURL = directory.appendingPathComponent("print-env.sh")
         try Data("""
         #!/bin/sh
-        printf '%s' "$CRAWLBAR_TEST_VALUE"
+        if [ "$#" -gt 0 ]; then
+          printf '%s|%s' "$CRAWLBAR_TEST_VALUE" "$*"
+        else
+          printf '%s' "$CRAWLBAR_TEST_VALUE"
+        fi
         """.utf8).write(to: scriptURL)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
 
@@ -295,7 +305,7 @@ enum CrawlBarSelfTest {
             binary: .init(name: scriptURL.path),
             branding: .init(symbolName: "terminal", accentColor: "#123456"),
             paths: .init(),
-            commands: ["status": []],
+            commands: ["status": [], "query": ["query"]],
             capabilities: [.status],
             configOptions: [
                 .init(id: "test_value", label: "Test Value", envVar: "CRAWLBAR_TEST_VALUE"),
@@ -306,6 +316,12 @@ enum CrawlBarSelfTest {
             configValues: ["test_value": "from-config"])
         let result = try CrawlCommandRunner().run(installation: installation, action: "status", timeoutSeconds: 5)
         try Self.expect(result.stdout == "from-config", "config values reach crawler command environment")
+        let queryResult = try CrawlCommandRunner().run(
+            installation: installation,
+            action: "query",
+            extraArguments: ["select count(*) from items"],
+            timeoutSeconds: 5)
+        try Self.expect(queryResult.stdout == "from-config|query select count(*) from items", "query arguments reach crawler commands")
     }
 
     private static func testActionFailuresPreserveStatusMetadata() throws {

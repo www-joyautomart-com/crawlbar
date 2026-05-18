@@ -45,6 +45,8 @@ enum CrawlBarCLI {
             try Self.runAction(command, registry: registry, runner: runner, json: options.json, appID: options.requiredAppID())
         case "install":
             try Self.install(registry: registry, installer: installer, json: options.json, appID: options.requiredAppID())
+        case "query":
+            try Self.query(registry: registry, runner: runner, options: options)
         case "action":
             guard let action = options.positionals.first else {
                 throw CLIError.usage("action requires an action id")
@@ -191,6 +193,71 @@ enum CrawlBarCLI {
             return
         }
         print(result.stdout.nilIfBlank ?? result.stderr.nilIfBlank ?? "installed \(installation.manifest.binary.name)")
+    }
+
+    private static func query(registry: CrawlAppRegistry, runner: CrawlCommandRunner, options: CLIOptions) throws {
+        let queryArguments = options.positionals
+        guard !queryArguments.isEmpty else {
+            throw CLIError.usage("query requires text or SQL")
+        }
+
+        let installations: [CrawlAppInstallation]
+        if let appID = options.appID, appID != CrawlAppID(rawValue: "all") {
+            guard let installation = try registry.installation(for: appID, includeSecrets: true) else {
+                throw CLIError.usage("unknown app: \(appID.rawValue)")
+            }
+            installations = [installation]
+        } else {
+            installations = try registry.availableInstallations(includeSecrets: true)
+        }
+
+        let results = installations.map { installation -> CrawlCommandResult in
+            guard let action = Self.queryAction(for: installation) else {
+                return CrawlCommandResult(
+                    appID: installation.id,
+                    action: "query",
+                    exitCode: 64,
+                    stdout: "",
+                    stderr: "\(installation.id.rawValue) does not expose a query command",
+                    startedAt: Date(),
+                    finishedAt: Date())
+            }
+            do {
+                return try runner.run(
+                    installation: installation,
+                    action: action,
+                    extraArguments: queryArguments,
+                    timeoutSeconds: 120)
+            } catch {
+                return CrawlCommandResult(
+                    appID: installation.id,
+                    action: action,
+                    exitCode: 1,
+                    stdout: "",
+                    stderr: error.localizedDescription,
+                    startedAt: Date(),
+                    finishedAt: Date())
+            }
+        }
+
+        if options.json {
+            try CLIOutput.writeJSON(results)
+        } else if results.count == 1, let result = results.first {
+            print(result.stdout.nilIfBlank ?? result.stderr.nilIfBlank ?? "exit \(result.exitCode)")
+        } else {
+            for result in results {
+                print("== \(result.appID.rawValue) ==")
+                print(result.stdout.nilIfBlank ?? result.stderr.nilIfBlank ?? "exit \(result.exitCode)")
+            }
+        }
+
+        if results.contains(where: { !$0.succeeded }) {
+            Foundation.exit(1)
+        }
+    }
+
+    private static func queryAction(for installation: CrawlAppInstallation) -> String? {
+        ["query", "sql", "search"].first { installation.manifest.commands[$0] != nil }
     }
 
     private static func backup(
@@ -362,6 +429,7 @@ enum CrawlBarCLI {
           metadata [--app <id>] [--json] [--diagnostics]
           status [--app <id|all>] [--json]
           install --app <id> [--json]
+          query [--app <id|all>] [--json] -- <text-or-sql>
           doctor --app <id> [--json]
           refresh --app <id> [--json]
           action <action-id> --app <id> [--json]
@@ -447,6 +515,10 @@ private struct CLIOptions {
                 self.revealSecrets = true
             case "--diagnostics":
                 self.diagnostics = true
+            case "--":
+                while let value = iterator.next() {
+                    self.positionals.append(value)
+                }
             default:
                 self.positionals.append(argument)
             }

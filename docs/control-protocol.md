@@ -113,6 +113,8 @@ Actions are manifest command arrays. CrawlBar does not shell-expand them.
 - `status` should be fast and read-only.
 - `doctor` may inspect auth/config and should avoid writes unless the crawler already defines that behavior.
 - `refresh` may pull data into the local database.
+- `query` should run a local read-only search or SQL-ish query. CrawlBar passes
+  user query text as additional argv after the manifest command array.
 - `publish`, `update`, and exporter actions are optional and should return JSON when possible.
 - desktop-cache actions should use public names such as `desktopcache` or `tap`.
   Existing `wiretap` command names can stay as backward-compatible aliases, but
