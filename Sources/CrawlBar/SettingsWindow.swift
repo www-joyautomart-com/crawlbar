@@ -1313,34 +1313,44 @@ struct CrawlBarAppDetailView: View {
                     caption: "Keep a local Git export for this crawler's shareable data.")
             }
                 .onChange(of: self.app.shareEnabled) { self.save() }
-            Toggle(isOn: self.$app.shareAfterRefresh) {
-                CrawlBarOptionLabel(
-                    title: "Publish after sync",
-                    caption: "Push the snapshot after a scheduled or manual sync.")
-            }
-                .disabled(!self.app.shareEnabled)
-                .onChange(of: self.app.shareAfterRefresh) { self.save() }
-            HStack(spacing: 8) {
-                if self.commandAvailable(self.app.preferredShareAction ?? "publish") {
-                    Button {
-                        self.runAction(self.app.preferredShareAction ?? "publish")
-                    } label: {
-                        Label("Publish Snapshot", systemImage: "arrow.up.circle")
+            if self.hasSnapshotRemote {
+                Toggle(isOn: self.$app.shareAfterRefresh) {
+                    CrawlBarOptionLabel(
+                        title: "Publish after sync",
+                        caption: "Push the snapshot after a scheduled or manual sync.")
+                }
+                    .disabled(!self.app.shareEnabled)
+                    .onChange(of: self.app.shareAfterRefresh) { self.save() }
+                HStack(spacing: 8) {
+                    if self.commandAvailable(self.app.preferredShareAction ?? "publish") {
+                        Button {
+                            self.runAction(self.app.preferredShareAction ?? "publish")
+                        } label: {
+                            Label("Publish Snapshot", systemImage: "arrow.up.circle")
+                        }
+                    }
+                    if self.commandAvailable(self.app.preferredUpdateAction ?? "update") {
+                        Button {
+                            self.runAction(self.app.preferredUpdateAction ?? "update")
+                        } label: {
+                            Label("Pull Updates", systemImage: "arrow.down.circle")
+                        }
                     }
                 }
-                if self.commandAvailable(self.app.preferredUpdateAction ?? "update") {
-                    Button {
-                        self.runAction(self.app.preferredUpdateAction ?? "update")
-                    } label: {
-                        Label("Pull Updates", systemImage: "arrow.down.circle")
-                    }
+                .disabled(!self.app.shareEnabled || self.runningAction != nil)
+            }
+            if self.hasSnapshotInfo {
+                Divider()
+                if let shareRepoPath = self.shareRepoPath {
+                    CrawlBarFact(label: "Share Repo", value: shareRepoPath)
+                }
+                if let shareRemote = self.shareRemote {
+                    CrawlBarFact(label: "Remote", value: shareRemote)
+                }
+                if let shareBranch = self.shareBranch {
+                    CrawlBarFact(label: "Branch", value: shareBranch)
                 }
             }
-            .disabled(!self.app.shareEnabled || self.runningAction != nil)
-            Divider()
-            CrawlBarFact(label: "Share Repo", value: self.status?.share?.repoPath ?? self.manifest?.paths.defaultShare ?? "Not configured")
-            CrawlBarFact(label: "Remote", value: self.status?.share?.remote ?? "Unknown")
-            CrawlBarFact(label: "Branch", value: self.status?.share?.branch ?? "Unknown")
         }
     }
 
@@ -1453,14 +1463,35 @@ struct CrawlBarAppDetailView: View {
     }
 
     private var snapshotSummary: String {
+        guard self.app.shareEnabled else { return "Off" }
         guard let share = self.status?.share else {
-            return self.app.shareEnabled ? "Configured, not reported" : "Off"
+            return self.shareRepoPath == nil ? "Configured, not reported" : "Local snapshot"
         }
-        let location = share.remote?.nilIfBlank ?? share.repoPath?.nilIfBlank ?? "No remote"
+        let location = share.remote?.nilIfBlank ?? share.repoPath?.nilIfBlank ?? "Local snapshot"
         if let branch = share.branch?.nilIfBlank {
             return "\(location) · \(branch)"
         }
         return location
+    }
+
+    private var hasSnapshotRemote: Bool {
+        self.app.shareEnabled && self.shareRemote != nil
+    }
+
+    private var hasSnapshotInfo: Bool {
+        self.app.shareEnabled && (self.shareRepoPath != nil || self.shareRemote != nil || self.shareBranch != nil)
+    }
+
+    private var shareRepoPath: String? {
+        self.status?.share?.repoPath?.nilIfBlank ?? self.manifest?.paths.defaultShare?.nilIfBlank
+    }
+
+    private var shareRemote: String? {
+        self.status?.share?.remote?.nilIfBlank
+    }
+
+    private var shareBranch: String? {
+        self.status?.share?.branch?.nilIfBlank
     }
 
     private var configSourceSummary: String {
