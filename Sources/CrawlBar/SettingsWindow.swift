@@ -512,7 +512,6 @@ struct CrawlBarSettingsView: View {
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
-                .help("Refresh status")
                 .accessibilityLabel("Refresh crawler status")
             }
             .padding(.horizontal, 4)
@@ -533,7 +532,6 @@ struct CrawlBarSettingsView: View {
                                 .padding(.horizontal, 8)
                             }
                             .buttonStyle(CrawlBarSidebarSelectionStyle(isSelected: self.selectedMode == .crawlers && self.model.selectedAppID == app.id))
-                            .help(CrawlBarCrawlerTitle.text(for: app.id, manifest: self.model.installations[app.id]?.manifest))
                             .accessibilityLabel(CrawlBarCrawlerTitle.text(for: app.id, manifest: self.model.installations[app.id]?.manifest))
                         }
                     }
@@ -652,7 +650,6 @@ private struct CrawlBarSidebarButton: View {
         }
         .buttonStyle(CrawlBarSidebarSelectionStyle(isSelected: self.isSelected))
         .opacity(self.isDimmed ? 0.58 : 1)
-        .help(self.title)
         .accessibilityLabel(self.title)
     }
 }
@@ -697,7 +694,6 @@ private struct CrawlBarGeneralSettingsView: View {
                         Label("Refresh All", systemImage: "arrow.clockwise")
                     }
                     .disabled(self.model.isRefreshing)
-                    .help("Refresh all crawler statuses")
                 }
 
                 CrawlBarPanel(title: "App") {
@@ -708,19 +704,16 @@ private struct CrawlBarGeneralSettingsView: View {
                             Label("Install CLI", systemImage: "terminal")
                         }
                         .disabled(self.model.isInstallingCLI)
-                        .help("Install crawlbar into ~/.local/bin")
                         Button {
                             self.model.openConfigFile()
                         } label: {
                             Label("Open Config", systemImage: "doc.text")
                         }
-                        .help("Open CrawlBar config")
                         Button {
                             self.model.openLogsFolder()
                         } label: {
                             Label("Open Logs", systemImage: "folder")
                         }
-                        .help("Open action logs")
                     }
                     .controlSize(.small)
                     CrawlBarFact(label: "CLI install path", value: "~/.local/bin/crawlbar")
@@ -744,7 +737,6 @@ private struct CrawlBarGeneralSettingsView: View {
                         }
                         .labelsHidden()
                         .frame(width: 180)
-                        .help("Default schedule")
                         .onChange(of: self.model.refreshFrequency) {
                             self.model.save()
                         }
@@ -952,7 +944,6 @@ struct CrawlBarAppDetailView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .help("Select crawler section")
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         self.selectedContent
@@ -995,7 +986,6 @@ struct CrawlBarAppDetailView: View {
                         Image(systemName: self.isRefreshing ? "hourglass" : "arrow.clockwise")
                     }
                     .buttonStyle(.borderless)
-                    .help("Refresh status")
                     .accessibilityLabel("Refresh status")
                 }
             }
@@ -1138,7 +1128,6 @@ struct CrawlBarAppDetailView: View {
                         Image(systemName: "folder")
                     }
                     .buttonStyle(.borderless)
-                    .help("Open data folder")
                     .accessibilityLabel("Open data folder")
                     Button {
                         self.backupDatabases()
@@ -1147,7 +1136,6 @@ struct CrawlBarAppDetailView: View {
                     }
                     .buttonStyle(.borderless)
                     .disabled(self.runningAction != nil)
-                    .help("Back up database files")
                     .accessibilityLabel("Back up database files")
                     Text("\(databases.count)")
                         .font(.caption.weight(.medium))
@@ -1212,7 +1200,6 @@ struct CrawlBarAppDetailView: View {
                         caption: "Allow CrawlBar to run actions and show live status.")
                 }
                     .onChange(of: self.app.enabled) { self.save() }
-                    .help("Enable crawler")
                 Toggle(isOn: self.$app.showInMenuBar) {
                     CrawlBarOptionLabel(
                         title: "Show in menu bar",
@@ -1220,7 +1207,6 @@ struct CrawlBarAppDetailView: View {
                 }
                     .disabled(!self.app.enabled)
                     .onChange(of: self.app.showInMenuBar) { self.save() }
-                    .help("Show in menu bar")
                 Toggle(isOn: self.$app.autoRefreshEnabled) {
                     CrawlBarOptionLabel(
                         title: "Run on schedule",
@@ -1228,14 +1214,12 @@ struct CrawlBarAppDetailView: View {
                 }
                     .disabled(!self.app.enabled)
                     .onChange(of: self.app.autoRefreshEnabled) { self.save() }
-                    .help("Run on schedule")
                 Toggle(isOn: self.usesGlobalRefreshBinding) {
                     CrawlBarOptionLabel(
                         title: "Use default schedule",
                         caption: "Follow the global interval from General settings.")
                 }
                     .disabled(!self.app.enabled || !self.app.autoRefreshEnabled)
-                    .help("Use default schedule")
             }
             CrawlBarControlRow(
                 title: "Custom schedule",
@@ -1248,7 +1232,6 @@ struct CrawlBarAppDetailView: View {
                 }
                 .labelsHidden()
                 .frame(width: 180)
-                .help("Custom schedule")
             }
             .disabled(!self.app.enabled || !self.app.autoRefreshEnabled || self.app.refreshFrequency == nil)
             Text("Default schedule: \(CrawlBarFrequencyLabel.text(for: self.globalRefreshFrequency))")
@@ -1261,7 +1244,6 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Install", systemImage: "square.and.arrow.down")
                     }
-                    .help("Install \(self.manifest?.binary.name ?? self.app.id.rawValue)")
                 }
                 if self.commandAvailable(self.app.preferredRefreshAction ?? "refresh") {
                     Button {
@@ -1269,7 +1251,6 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
                     }
-                    .help("Run the configured sync source")
                 }
                 if self.commandAvailable("desktop-cache-import") {
                     Button {
@@ -1277,7 +1258,6 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Import Desktop", systemImage: "externaldrive.connected.to.line.below")
                     }
-                    .help("Import from the local desktop cache")
                 }
                 if self.commandAvailable("doctor") {
                     Button {
@@ -1285,7 +1265,6 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Run Doctor", systemImage: "stethoscope")
                     }
-                    .help("Inspect crawler setup")
                 }
                 if self.commandAvailable("unlock") {
                     Button {
@@ -1293,7 +1272,6 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Unlock", systemImage: "key")
                     }
-                    .help("Show explicit unlock state")
                 }
                 if self.nativeAppAvailable {
                     Button {
@@ -1301,7 +1279,6 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Open Source App", systemImage: "app")
                     }
-                    .help("Open the native source app")
                 }
                 if self.commandAvailable(self.app.preferredUpdateAction ?? "update") {
                     Button {
@@ -1309,7 +1286,6 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Update", systemImage: "square.and.arrow.down")
                     }
-                    .help("Update the crawler")
                 }
             }
             .disabled(self.runningAction != nil)
@@ -1337,7 +1313,6 @@ struct CrawlBarAppDetailView: View {
                     caption: "Keep a local Git export for this crawler's shareable data.")
             }
                 .onChange(of: self.app.shareEnabled) { self.save() }
-                .help("Manage snapshot")
             Toggle(isOn: self.$app.shareAfterRefresh) {
                 CrawlBarOptionLabel(
                     title: "Publish after sync",
@@ -1345,7 +1320,6 @@ struct CrawlBarAppDetailView: View {
             }
                 .disabled(!self.app.shareEnabled)
                 .onChange(of: self.app.shareAfterRefresh) { self.save() }
-                .help("Publish after sync")
             HStack(spacing: 8) {
                 if self.commandAvailable(self.app.preferredShareAction ?? "publish") {
                     Button {
@@ -1353,7 +1327,6 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Publish Snapshot", systemImage: "arrow.up.circle")
                     }
-                    .help("Publish the local snapshot")
                 }
                 if self.commandAvailable(self.app.preferredUpdateAction ?? "update") {
                     Button {
@@ -1361,7 +1334,6 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Pull Updates", systemImage: "arrow.down.circle")
                     }
-                    .help("Pull snapshot updates")
                 }
             }
             .disabled(!self.app.shareEnabled || self.runningAction != nil)
@@ -1792,7 +1764,6 @@ struct CrawlBarStatusDot: View {
         Circle()
             .fill(self.color)
             .frame(width: 8, height: 8)
-            .help(CrawlBarStatusLabel.text(for: self.state))
             .accessibilityLabel(CrawlBarStatusLabel.text(for: self.state))
     }
 
@@ -1825,7 +1796,6 @@ struct CrawlBarStatusPill: View {
         .padding(.vertical, 4)
         .background(Color(nsColor: .quaternaryLabelColor).opacity(0.12))
         .clipShape(Capsule())
-        .help(CrawlBarStatusLabel.text(for: self.state))
     }
 }
 
@@ -1866,7 +1836,6 @@ struct CrawlBarIssueBanner: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(self.color.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .help(self.message)
     }
 
     private var color: Color {
@@ -2028,7 +1997,6 @@ struct CrawlBarConfigOptionField: View {
         CrawlBarControlRow(title: self.option.label, caption: self.caption) {
             self.control
         }
-        .help(self.option.help?.nilIfBlank ?? self.option.label)
     }
 
     @ViewBuilder
@@ -2039,20 +2007,17 @@ struct CrawlBarConfigOptionField: View {
                 SecureField(self.option.placeholder ?? "Value", text: self.$value)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 300)
-                    .help(self.option.placeholder ?? self.option.label)
                 Button {
                     self.value = ""
                 } label: {
                     Image(systemName: "key.slash")
                 }
                 .buttonStyle(.borderless)
-                .help("Clear saved secret")
                 .accessibilityLabel("Clear saved secret")
             }
         case .boolean:
             Toggle("", isOn: self.booleanBinding)
                 .labelsHidden()
-                .help(self.option.label)
         case .choice:
             Picker("Value", selection: self.$value) {
                 ForEach(self.choices, id: \.self) { choice in
@@ -2061,12 +2026,10 @@ struct CrawlBarConfigOptionField: View {
             }
             .labelsHidden()
             .frame(width: 220)
-            .help(self.option.help?.nilIfBlank ?? self.option.label)
         case .string:
             TextField(self.option.placeholder ?? "Value", text: self.$value)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 300)
-                .help(self.option.placeholder ?? self.option.label)
         }
     }
 
