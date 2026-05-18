@@ -1040,7 +1040,10 @@ struct CrawlBarAppDetailView: View {
         case .overview:
             self.overviewDashboard
         case .data:
-            self.databases
+            self.remoteStore
+            if !self.usesRemoteStore {
+                self.databases
+            }
             self.metrics
         case .sync:
             self.syncSettings
@@ -1192,6 +1195,24 @@ struct CrawlBarAppDetailView: View {
                 Text("No action logs yet")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var remoteStore: some View {
+        if let remoteStore = self.remoteStoreSummary {
+            CrawlBarPanel(title: "Remote Store") {
+                CrawlBarFact(label: "Remote", value: remoteStore.remote)
+                if let repoPath = remoteStore.repoPath {
+                    CrawlBarFact(label: "Checkout", value: repoPath)
+                }
+                if let branch = remoteStore.branch {
+                    CrawlBarFact(label: "Branch", value: branch)
+                }
+                if let databasePath = self.status?.databasePath {
+                    CrawlBarFact(label: "Local index", value: URL(fileURLWithPath: databasePath).lastPathComponent)
+                }
             }
         }
     }
@@ -1545,6 +1566,9 @@ struct CrawlBarAppDetailView: View {
     }
 
     private var archiveSourceSummary: String {
+        if let remoteStore = self.remoteStoreSummary {
+            return remoteStore.shortName
+        }
         if let database = self.primaryDatabase ?? self.status?.databases.first {
             return database.path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? database.label
         }
@@ -1638,6 +1662,9 @@ struct CrawlBarAppDetailView: View {
 
     private var databaseSummary: String {
         guard let status else { return "Unknown" }
+        if let remoteStore = self.remoteStoreSummary {
+            return remoteStore.shortName
+        }
         if self.app.id == BuiltInCrawlApps.gitcrawlID {
             return self.summaryText(label: "GitHub archives", bytes: self.totalDatabaseBytes)
         }
@@ -1694,6 +1721,9 @@ struct CrawlBarAppDetailView: View {
     }
 
     private var overviewDataScope: String {
+        if self.usesRemoteStore {
+            return "Remote store"
+        }
         if self.primaryDatabase?.counts.isEmpty == false {
             return "Active database"
         }
@@ -1732,16 +1762,30 @@ struct CrawlBarAppDetailView: View {
         self.manifest?.availability == .available && self.installation?.binaryPath == nil
     }
 
-    private var isRemoteGitcrawlStore: Bool {
-        guard self.app.id == BuiltInCrawlApps.gitcrawlID else { return false }
+    private var usesRemoteStore: Bool {
+        self.remoteStoreSummary != nil
+    }
+
+    private var remoteStoreSummary: CrawlBarRemoteStoreSummary? {
+        if self.status?.share?.enabled == true, let remote = self.status?.share?.remote?.nilIfBlank {
+            return CrawlBarRemoteStoreSummary(
+                remote: remote,
+                repoPath: self.status?.share?.repoPath?.nilIfBlank,
+                branch: self.status?.share?.branch?.nilIfBlank)
+        }
+        guard self.app.id == BuiltInCrawlApps.gitcrawlID else { return nil }
         var paths = self.status?.databases.compactMap(\.path) ?? []
         if let databasePath = self.status?.databasePath {
             paths.append(databasePath)
         }
-        return paths.contains { path in
-            let lowercased = path.lowercased()
-            return lowercased.contains("/stores/") && lowercased.contains("remote")
+        guard let storePath = paths.first(where: { $0.contains("/gitcrawl-store/") || $0.contains("/gitcrawl-store-remote/") }) else {
+            return nil
         }
+        let repoPath = Self.repoPath(containing: "/data/", in: storePath)
+        return CrawlBarRemoteStoreSummary(
+            remote: "https://github.com/openclaw/gitcrawl-store.git",
+            repoPath: repoPath,
+            branch: nil)
     }
 
     private var usesGlobalRefreshBinding: Binding<Bool> {
@@ -1799,14 +1843,19 @@ struct CrawlBarAppDetailView: View {
     }
 
     private func configDisabledReason(for option: CrawlAppManifest.ConfigOption) -> String? {
-        guard self.isRemoteGitcrawlStore else { return nil }
+        guard self.usesRemoteStore else { return nil }
         let optionText = [
             option.id,
             option.configKey,
             option.envVar,
         ].compactMap { $0?.lowercased() }.joined(separator: " ")
         guard optionText.contains("openai") || optionText.contains("embedding") else { return nil }
-        return "Disabled while Git Crawl is using a remote store."
+        return "Disabled while this crawler is using a remote store."
+    }
+
+    private static func repoPath(containing marker: String, in path: String) -> String? {
+        guard let range = path.range(of: marker) else { return nil }
+        return String(path[..<range.lowerBound])
     }
 
     private func configSections(for manifest: CrawlAppManifest) -> [CrawlBarConfigSection] {
@@ -2048,6 +2097,21 @@ struct CrawlBarMetricRow: View {
         }
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct CrawlBarRemoteStoreSummary {
+    var remote: String
+    var repoPath: String?
+    var branch: String?
+
+    var shortName: String {
+        let trimmed = self.remote
+            .replacingOccurrences(of: "https://github.com/", with: "")
+            .replacingOccurrences(of: "git@github.com:", with: "")
+            .replacingOccurrences(of: ".git", with: "")
+            .nilIfBlank
+        return trimmed ?? "Remote store"
     }
 }
 
