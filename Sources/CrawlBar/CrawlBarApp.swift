@@ -102,6 +102,9 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
             if self.commandAvailable("doctor", installation: installation) {
                 submenu.addItem(self.actionItem("Doctor", appID: installation.id, action: "doctor"))
             }
+            if self.commandAvailable("unlock", installation: installation) {
+                submenu.addItem(self.actionItem("Unlock", appID: installation.id, action: "unlock"))
+            }
             if config?.shareEnabled == true {
                 submenu.addItem(.separator())
                 let publishAction = config?.preferredShareAction ?? "publish"

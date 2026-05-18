@@ -140,13 +140,16 @@ enum CrawlBarSelfTest {
         try Self.expect(BuiltInCrawlApps.graincrawl.availability == .available, "graincrawl is available")
         try Self.expect(BuiltInCrawlApps.graincrawl.commands["status"] == ["status", "--json"], "graincrawl uses crawlkit status command")
         try Self.expect(
-            BuiltInCrawlApps.graincrawl.commands["refresh"] == ["sync", "--source", "desktop-cache", "--json"],
-            "graincrawl refresh uses desktop cache by default")
+            BuiltInCrawlApps.graincrawl.commands["refresh"] == ["sync", "--source", "private-api", "--json"],
+            "graincrawl refresh uses private API by default")
+        try Self.expect(
+            BuiltInCrawlApps.graincrawl.commands["query"] == ["--json", "sql"],
+            "graincrawl query emits JSON by default")
+        try Self.expect(BuiltInCrawlApps.graincrawl.commands["unlock"] == ["unlock", "--json"], "graincrawl exposes unlock action")
         try Self.expect(BuiltInCrawlApps.graincrawl.branding.bundleIdentifier == "com.granola.app", "graincrawl uses native Granola icon")
         try Self.expect(BuiltInCrawlApps.gitcrawl.commands["status"] == ["status", "--json"], "gitcrawl uses fast status command")
         try Self.expect(BuiltInCrawlApps.gitcrawl.commands["refresh"] == ["sync", "--json"], "gitcrawl keeps refresh action wired")
         try Self.expect(BuiltInCrawlApps.slacrawl.commands["query"] == ["sql"], "Slack exposes query action")
-        try Self.expect(BuiltInCrawlApps.graincrawl.commands["query"] == ["sql"], "graincrawl exposes query action")
         try Self.expect(BuiltInCrawlApps.gitcrawl.configSections.contains { $0.id == "github" }, "built-in config sections exist")
     }
 

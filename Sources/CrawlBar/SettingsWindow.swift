@@ -350,6 +350,8 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
             "Sync"
         case "doctor":
             "Doctor"
+        case "unlock":
+            "Unlock"
         case "publish":
             "Publish"
         case "update":
@@ -1183,6 +1185,13 @@ struct CrawlBarAppDetailView: View {
                         self.runAction("doctor")
                     } label: {
                         Label("Run Doctor", systemImage: "stethoscope")
+                    }
+                }
+                if self.commandAvailable("unlock") {
+                    Button {
+                        self.runAction("unlock")
+                    } label: {
+                        Label("Unlock", systemImage: "key")
                     }
                 }
                 if self.commandAvailable(self.app.preferredUpdateAction ?? "update") {
