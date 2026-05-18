@@ -21,11 +21,20 @@ public struct CrawlNativeConfigStore: @unchecked Sendable {
         return merged.filter { !secretIDs.contains($0.key) }
     }
 
-    public func write(appConfig: CrawlBarAppConfig, manifest: CrawlAppManifest) throws {
+    public func write(
+        appConfig: CrawlBarAppConfig,
+        manifest: CrawlAppManifest,
+        clearMissingSecretIDs: Set<String> = [])
+        throws
+    {
         guard manifest.configOptions.contains(where: { $0.configKey?.nilIfBlank != nil }),
               let path = self.configPath(appConfig: appConfig, manifest: manifest)
         else { return }
-        try self.write(values: appConfig.configValues, manifest: manifest, path: path)
+        try self.write(
+            values: appConfig.configValues,
+            manifest: manifest,
+            path: path,
+            clearMissingSecretIDs: clearMissingSecretIDs)
     }
 
     public func write(config: CrawlBarConfig) throws {
@@ -66,7 +75,13 @@ public struct CrawlNativeConfigStore: @unchecked Sendable {
         return values
     }
 
-    private func write(values: [String: String], manifest: CrawlAppManifest, path: String) throws {
+    private func write(
+        values: [String: String],
+        manifest: CrawlAppManifest,
+        path: String,
+        clearMissingSecretIDs: Set<String>)
+        throws
+    {
         let url = URL(fileURLWithPath: PathExpander.expandHome(path))
         let hasWritableValues = manifest.configOptions.contains { option in
             guard option.configKey?.nilIfBlank != nil else { return false }
@@ -87,7 +102,7 @@ public struct CrawlNativeConfigStore: @unchecked Sendable {
         for option in manifest.configOptions {
             guard let configKey = option.configKey?.nilIfBlank else { continue }
             guard let value = values[option.id]?.nilIfBlank else {
-                if option.kind == .secret {
+                if option.kind == .secret, !clearMissingSecretIDs.contains(option.id) {
                     continue
                 }
                 Self.remove(configKey: configKey, in: &lines)

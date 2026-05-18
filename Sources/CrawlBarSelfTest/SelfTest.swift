@@ -9,6 +9,7 @@ enum CrawlBarSelfTest {
         try Self.testConfigStoreRoundTrips()
         try Self.testExternalManifestCatalog()
         try Self.testNativeConfigRoundTrips()
+        try Self.testStatusSecretsLoadFromNativeConfig()
         try Self.testStatusMapperNormalizesCounts()
         try Self.testActionFailuresPreserveStatusMetadata()
         try Self.testConfigValuesReachCommandEnvironment()
@@ -201,6 +202,57 @@ enum CrawlBarSelfTest {
         try nativeStore.write(appConfig: appConfig, manifest: manifest)
         let clearedContent = try String(contentsOf: configURL, encoding: .utf8)
         try Self.expect(clearedContent.contains("api_key = \"from-file\""), "native TOML secret keys preserve when omitted")
+        try nativeStore.write(appConfig: appConfig, manifest: manifest, clearMissingSecretIDs: ["openai_api_key"])
+        let explicitlyClearedContent = try String(contentsOf: configURL, encoding: .utf8)
+        try Self.expect(!explicitlyClearedContent.contains("api_key ="), "native TOML secret keys clear when explicit")
+    }
+
+    private static func testStatusSecretsLoadFromNativeConfig() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("crawlbar-status-secret-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let scriptURL = directory.appendingPathComponent("secret-status.sh")
+        try Data("""
+        #!/bin/sh
+        printf '{"state":"ok"}'
+        """.utf8).write(to: scriptURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+
+        let nativeConfigURL = directory.appendingPathComponent("status.toml")
+        try Data("""
+        [auth]
+        token = "from-native"
+        """.utf8).write(to: nativeConfigURL)
+
+        let manifest = CrawlAppManifest(
+            id: CrawlAppID(rawValue: "statussecret"),
+            displayName: "Status Secret",
+            description: "A status secret test crawler",
+            binary: .init(name: scriptURL.path),
+            branding: .init(symbolName: "lock", accentColor: "#123456"),
+            paths: .init(defaultConfig: nativeConfigURL.path),
+            commands: ["status": ["status", "--json"]],
+            capabilities: [.status],
+            statusRequiresSecrets: true,
+            configOptions: [
+                .init(id: "token", label: "Token", kind: .secret, envVar: "STATUS_SECRET_TOKEN", configKey: "auth.token"),
+            ])
+        try CrawlCoding.makeJSONEncoder().encode(manifest)
+            .write(to: directory.appendingPathComponent("statussecret.json"))
+        let configURL = directory.appendingPathComponent("config.json")
+        let store = CrawlBarConfigStore(fileURL: configURL)
+        try store.save(CrawlBarConfig(manifestDirectories: [directory.path]))
+        let registry = CrawlAppRegistry(configStore: store)
+
+        guard let plain = try registry.installation(for: manifest.id, includeSecrets: false),
+              let status = try registry.installationForStatus(for: manifest.id)
+        else {
+            throw SelfTestError.failed("status secret crawler loads")
+        }
+        try Self.expect(plain.configValues["token"] == nil, "plain installation omits native secret")
+        try Self.expect(status.configValues["token"] == "from-native", "status installation rehydrates native secret")
     }
 
     private static func testStatusMapperNormalizesCounts() throws {
@@ -290,6 +342,20 @@ enum CrawlBarSelfTest {
             finishedAt: Date())
         let okStatus = CrawlStatusMapper().status(from: okResult, manifest: BuiltInCrawlApps.graincrawl)
         try Self.expect(okStatus.state == .current, "crawlkit ok state maps to current")
+
+        let failedOutput = """
+        {"schema_version":"crawlkit.control.v1","app_id":"graincrawl","state":"failed","summary":"broken"}
+        """
+        let failedResult = CrawlCommandResult(
+            appID: BuiltInCrawlApps.graincrawlID,
+            action: "status",
+            exitCode: 0,
+            stdout: failedOutput,
+            stderr: "",
+            startedAt: Date(),
+            finishedAt: Date())
+        let failedStatus = CrawlStatusMapper().status(from: failedResult, manifest: BuiltInCrawlApps.graincrawl)
+        try Self.expect(failedStatus.state == .error, "crawlkit failed state maps to error")
     }
 
     private static func testConfigValuesReachCommandEnvironment() throws {

@@ -102,7 +102,11 @@ public struct CrawlAppRegistry: @unchecked Sendable {
             enabled: installation.enabled,
             configPath: installation.configPathOverride,
             configValues: installation.configValues)
-        let secretConfig = self.configStore.appConfigWithSecrets(appConfig, manifest: installation.manifest)
+        let nativeConfig = self.appConfigWithNativeValues(
+            appConfig,
+            manifest: installation.manifest,
+            includeSecrets: true)
+        let secretConfig = self.configStore.appConfigWithSecrets(nativeConfig, manifest: installation.manifest)
         return CrawlAppInstallation(
             manifest: installation.manifest,
             binaryPath: installation.binaryPath,

@@ -250,8 +250,7 @@ public struct CrawlStatusMapper: Sendable {
         staleAfterSeconds: Int?)
         -> CrawlAppState
     {
-        if let rawValue = self.stringValue(["state", "status"], in: object),
-           let state = CrawlAppState(rawValue: rawValue)
+        if let state = self.statusValue(["state", "status"], in: object)
         {
             if state == .current, freshness?.status == .stale {
                 return .stale

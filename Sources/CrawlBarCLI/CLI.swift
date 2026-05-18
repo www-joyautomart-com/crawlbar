@@ -389,7 +389,11 @@ enum CrawlBarCLI {
                     resolvedValues[key] = value
                 }
                 nativeAppConfig.configValues = resolvedValues
-                try nativeConfigStore.write(appConfig: nativeAppConfig, manifest: installation.manifest)
+                let clearMissingSecretIDs: Set<String> = value.nilIfBlank == nil ? [key] : []
+                try nativeConfigStore.write(
+                    appConfig: nativeAppConfig,
+                    manifest: installation.manifest,
+                    clearMissingSecretIDs: clearMissingSecretIDs)
             }
             if options.json {
                 try CLIOutput.writeJSON(["app_id": appID.rawValue, "key": key, "updated": "true"])
