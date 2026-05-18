@@ -17,6 +17,8 @@ enum CrawlBarApp {
 final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var refreshTimer: Timer?
+    private var refreshAnimationTimer: Timer?
+    private var refreshAnimationFrame = 0
     private let settingsWindowController = CrawlBarSettingsWindowController()
     private let model = CrawlBarMenuModel()
 
@@ -36,9 +38,9 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
             self?.hideFromApplicationSwitcher()
         }
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = CrawlBarIconFactory.menuBarImage()
         statusItem.button?.imagePosition = .imageLeading
         self.statusItem = statusItem
+        self.updateStatusButtonImage()
         self.reloadMenu()
         self.model.refreshAll { [weak self] in
             self?.reloadMenu()
@@ -67,6 +69,7 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Settings...", action: #selector(Self.showSettings(_:)), keyEquivalent: ",", target: self))
         menu.addItem(NSMenuItem(title: "Quit CrawlBar", action: #selector(Self.quit(_:)), keyEquivalent: "q", target: self))
         self.statusItem?.menu = menu
+        self.syncRefreshAnimation()
     }
 
     private func appMenuItem(for installation: CrawlAppInstallation) -> NSMenuItem {
@@ -205,6 +208,38 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    private func syncRefreshAnimation() {
+        self.updateStatusButtonImage()
+        if self.model.isRefreshing {
+            guard self.refreshAnimationTimer == nil else { return }
+            self.refreshAnimationTimer = Timer.scheduledTimer(withTimeInterval: 0.16, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    self?.advanceRefreshAnimation()
+                }
+            }
+        } else {
+            self.refreshAnimationTimer?.invalidate()
+            self.refreshAnimationTimer = nil
+            self.refreshAnimationFrame = 0
+            self.updateStatusButtonImage()
+        }
+    }
+
+    private func advanceRefreshAnimation() {
+        guard self.model.isRefreshing else {
+            self.syncRefreshAnimation()
+            return
+        }
+        self.refreshAnimationFrame = (self.refreshAnimationFrame + 1) % 8
+        self.updateStatusButtonImage()
+    }
+
+    private func updateStatusButtonImage() {
+        let rotation = self.model.isRefreshing ? CGFloat(self.refreshAnimationFrame) * 45 : 0
+        self.statusItem?.button?.image = CrawlBarIconFactory.menuBarImage(rotationDegrees: rotation)
+        self.statusItem?.button?.toolTip = self.model.isRefreshing ? "CrawlBar is refreshing crawler status" : "CrawlBar"
     }
 
     @objc private func refreshAll(_ sender: Any?) {

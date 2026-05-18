@@ -50,9 +50,16 @@ enum CrawlBarIconFactory {
         return image
     }
 
-    static func menuBarImage(size: CGFloat = 18) -> NSImage {
+    static func menuBarImage(size: CGFloat = 18, rotationDegrees: CGFloat = 0) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size))
         image.lockFocus()
+        if rotationDegrees != 0 {
+            let transform = NSAffineTransform()
+            transform.translateX(by: size / 2, yBy: size / 2)
+            transform.rotate(byDegrees: rotationDegrees)
+            transform.translateX(by: -size / 2, yBy: -size / 2)
+            transform.concat()
+        }
         let stroke = NSColor.labelColor
         stroke.setStroke()
         let line = NSBezierPath()

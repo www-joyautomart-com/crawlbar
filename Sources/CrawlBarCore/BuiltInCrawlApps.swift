@@ -246,7 +246,7 @@ public enum BuiltInCrawlApps {
         branding: .init(
             symbolName: "note.text",
             accentColor: "#D4A017",
-            bundleIdentifier: "com.vincentkoc.graincrawl"),
+            bundleIdentifier: "com.granola.app"),
         paths: .init(
             defaultConfig: "~/.config/graincrawl/config.toml",
             configEnv: "GRAINCRAWL_CONFIG",

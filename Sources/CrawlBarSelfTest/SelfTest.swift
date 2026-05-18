@@ -140,6 +140,7 @@ enum CrawlBarSelfTest {
         try Self.expect(
             BuiltInCrawlApps.graincrawl.commands["refresh"] == ["sync", "--source", "desktop-cache", "--json"],
             "graincrawl refresh uses desktop cache by default")
+        try Self.expect(BuiltInCrawlApps.graincrawl.branding.bundleIdentifier == "com.granola.app", "graincrawl uses native Granola icon")
         try Self.expect(BuiltInCrawlApps.gitcrawl.commands["status"] == ["status", "--json"], "gitcrawl uses fast status command")
         try Self.expect(BuiltInCrawlApps.gitcrawl.commands["refresh"] == ["sync", "--json"], "gitcrawl keeps refresh action wired")
         try Self.expect(BuiltInCrawlApps.slacrawl.commands["query"] == ["sql"], "Slack exposes query action")
