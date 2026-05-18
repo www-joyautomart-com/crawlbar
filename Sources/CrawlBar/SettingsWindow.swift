@@ -57,7 +57,7 @@ final class CrawlBarSettingsWindowController: NSObject, NSWindowDelegate {
 }
 
 @MainActor
-final class CrawlBarSettingsModel: ObservableObject {
+final class CrawlBarSettingsModel: NSObject, ObservableObject {
     @Published var apps: [CrawlBarAppConfig] = []
     @Published var refreshFrequency: RefreshFrequency = .fifteenMinutes
     @Published var selectedAppID: CrawlAppID?
@@ -83,11 +83,21 @@ final class CrawlBarSettingsModel: ObservableObject {
     private let installer = CrawlInstaller()
     private let logStore = CrawlActionLogStore()
 
-    init() {
+    override init() {
         let runner = CrawlCommandRunner()
         self.runner = runner
         self.statusService = CrawlStatusService(runner: runner)
+        super.init()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(Self.statusesDidChange(_:)),
+            name: .crawlBarStatusesDidChange,
+            object: nil)
         self.load()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     func load() {
@@ -145,6 +155,7 @@ final class CrawlBarSettingsModel: ObservableObject {
             try self.store.save(config)
             try self.nativeConfigStore.write(config: config)
             self.lastError = nil
+            CrawlBarStateBroadcast.configDidChange()
         } catch {
             CrawlBarLog.config.error("Settings save failed: \(error.localizedDescription, privacy: .public)")
             self.lastError = error.localizedDescription
@@ -171,7 +182,7 @@ final class CrawlBarSettingsModel: ObservableObject {
         let registry = self.registry
         let statusService = self.statusService
         self.refreshTask = Task.detached {
-            let installations = (try? registry.installations(includeDisabled: true, includeSecrets: true)) ?? []
+            let installations = (try? registry.installationsForStatus(includeDisabled: true)) ?? []
             await MainActor.run {
                 guard self.refreshGeneration == generation else { return }
                 self.installations = Dictionary(uniqueKeysWithValues: installations.map { ($0.id, $0) })
@@ -190,6 +201,7 @@ final class CrawlBarSettingsModel: ObservableObject {
                     await MainActor.run {
                         guard self.refreshGeneration == generation else { return }
                         self.statuses[status.appID] = status
+                        CrawlBarStateBroadcast.statusesDidChange([status.appID: status])
                     }
                 }
             }
@@ -237,10 +249,22 @@ final class CrawlBarSettingsModel: ObservableObject {
                     Self.actionFailureStatus($0, refreshedStatus: refreshedStatus, currentStatus: self.statuses[appID])
                 } ?? refreshedStatus
                 self.statuses[appID] = status
+                CrawlBarStateBroadcast.statusesDidChange([appID: status])
                 self.runningActions[appID] = nil
                 self.actionMessages[appID] = message
             }
         }
+    }
+
+    private func mergeStatuses(_ incoming: [CrawlAppID: CrawlAppStatus]) {
+        for (appID, status) in incoming {
+            self.statuses[appID] = status
+        }
+    }
+
+    @objc private func statusesDidChange(_ notification: Notification) {
+        guard let statuses = CrawlBarStateBroadcast.statuses(from: notification) else { return }
+        self.mergeStatuses(statuses)
     }
 
     func installApp(_ appID: CrawlAppID) {
