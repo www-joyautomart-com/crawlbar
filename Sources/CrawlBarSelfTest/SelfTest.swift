@@ -141,8 +141,8 @@ enum CrawlBarSelfTest {
         try Self.expect(BuiltInCrawlApps.graincrawl.availability == .available, "graincrawl is available")
         try Self.expect(BuiltInCrawlApps.graincrawl.commands["status"] == ["status", "--json"], "graincrawl uses crawlkit status command")
         try Self.expect(
-            BuiltInCrawlApps.graincrawl.commands["refresh"] == ["sync", "--source", "private-api", "--json"],
-            "graincrawl refresh uses private API by default")
+            BuiltInCrawlApps.graincrawl.commands["refresh"] == ["sync", "--json"],
+            "graincrawl refresh honors configured source")
         try Self.expect(
             BuiltInCrawlApps.graincrawl.commands["query"] == ["--json", "sql"],
             "graincrawl query emits JSON by default")

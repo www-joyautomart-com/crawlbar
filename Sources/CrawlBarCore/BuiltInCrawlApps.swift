@@ -257,7 +257,7 @@ public enum BuiltInCrawlApps {
             "status": ["status", "--json"],
             "doctor": ["doctor", "--json"],
             "unlock": ["unlock", "--json"],
-            "refresh": ["sync", "--source", "private-api", "--json"],
+            "refresh": ["sync", "--json"],
             "query": ["--json", "sql"],
             "export-md": ["export", "markdown", "--out", "./granola-notes"],
         ],
