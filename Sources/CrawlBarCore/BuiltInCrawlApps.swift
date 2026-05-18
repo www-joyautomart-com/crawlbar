@@ -260,6 +260,7 @@ public enum BuiltInCrawlApps {
             "doctor": ["doctor", "--json"],
             "unlock": ["unlock", "--json"],
             "refresh": ["sync", "--json"],
+            "desktop-cache-import": ["sync", "--source", "desktop-cache", "--json"],
             "query": ["--json", "sql"],
             "search": ["--json", "search"],
             "export-md": ["export", "markdown", "--out", "./granola-notes"],

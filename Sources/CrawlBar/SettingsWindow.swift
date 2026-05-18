@@ -390,6 +390,8 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
             "Publish"
         case "update":
             "Update"
+        case "desktop-cache-import":
+            "Desktop Import"
         default:
             action
         }
@@ -1308,6 +1310,13 @@ struct CrawlBarAppDetailView: View {
                         Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
                     }
                 }
+                if self.commandAvailable("desktop-cache-import") {
+                    Button {
+                        self.runAction("desktop-cache-import")
+                    } label: {
+                        Label("Import Desktop", systemImage: "externaldrive.connected.to.line.below")
+                    }
+                }
                 if self.commandAvailable("doctor") {
                     Button {
                         self.runAction("doctor")
@@ -1516,6 +1525,8 @@ struct CrawlBarAppDetailView: View {
             "Publish"
         case "update":
             "Update"
+        case "desktop-cache-import":
+            "Desktop Import"
         default:
             action
         }

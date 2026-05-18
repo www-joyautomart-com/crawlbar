@@ -145,6 +145,9 @@ enum CrawlBarSelfTest {
             BuiltInCrawlApps.graincrawl.commands["refresh"] == ["sync", "--json"],
             "graincrawl refresh honors configured source")
         try Self.expect(
+            BuiltInCrawlApps.graincrawl.commands["desktop-cache-import"] == ["sync", "--source", "desktop-cache", "--json"],
+            "graincrawl exposes explicit desktop cache import")
+        try Self.expect(
             BuiltInCrawlApps.graincrawl.commands["query"] == ["--json", "sql"],
             "graincrawl query emits JSON by default")
         try Self.expect(BuiltInCrawlApps.graincrawl.commands["unlock"] == ["unlock", "--json"], "graincrawl exposes unlock action")
