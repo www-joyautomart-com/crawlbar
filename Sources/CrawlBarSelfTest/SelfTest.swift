@@ -76,6 +76,24 @@ enum CrawlBarSelfTest {
             capabilities: [.status])
         let data = try CrawlCoding.makeJSONEncoder().encode(manifest)
         try data.write(to: directory.appendingPathComponent("customcrawl.json"))
+        try Data("""
+        {
+          "schema_version": "crawlkit.control.v1",
+          "id": "objectcrawl",
+          "display_name": "Object Crawl",
+          "description": "A crawlkit manifest",
+          "binary": {"name": "objectcrawl"},
+          "branding": {"symbol_name": "tray", "accent_color": "#123456"},
+          "paths": {"default_config": "~/.objectcrawl/config.toml"},
+          "commands": {
+            "status": {"title": "Status", "argv": ["objectcrawl", "status", "--json"], "json": true},
+            "sync": {"title": "Sync", "argv": ["objectcrawl", "sync", "--json"], "json": true, "mutates": true},
+            "tap": {"title": "Desktop", "argv": ["objectcrawl", "tap", "--json"], "json": true, "mutates": true}
+          },
+          "capabilities": ["metadata", "status", "sync", "tap", "git-share"],
+          "privacy": {"exports_secrets": false}
+        }
+        """.utf8).write(to: directory.appendingPathComponent("objectcrawl.json"))
         try Data("{ bad json".utf8).write(to: directory.appendingPathComponent("broken.json"))
 
         let config = CrawlBarConfig(manifestDirectories: [directory.path])
@@ -88,13 +106,37 @@ enum CrawlBarSelfTest {
         let registry = CrawlAppRegistry(configStore: store, catalog: catalog)
         let installations = try registry.installations(includeDisabled: true)
         try Self.expect(manifests.contains { $0.id == manifest.id }, "external manifests load from disk")
+        guard let objectManifest = manifests.first(where: { $0.id.rawValue == "objectcrawl" }) else {
+            throw SelfTestError.failed("crawlkit command-object manifests load from disk")
+        }
+        try Self.expect(objectManifest.commands["status"] == ["status", "--json"], "crawlkit command argv strips binary")
+        try Self.expect(objectManifest.capabilities.contains(.refresh), "crawlkit sync capability maps to refresh")
+        try Self.expect(objectManifest.capabilities.contains(.desktopCache), "crawlkit tap capability maps to desktop cache")
+        try Self.expect(objectManifest.capabilities.contains(.publish), "crawlkit git-share capability maps to publish")
         try Self.expect(diagnostics.contains { $0.path.hasSuffix("broken.json") }, "external manifest parse errors are reported")
         try Self.expect(installations.contains { $0.id == manifest.id }, "external manifests appear as installations")
         try Self.expect(BuiltInCrawlApps.gitcrawl.configOptions.contains { $0.id == "embedding_model" }, "built-in config options exist")
+        try Self.expect(!BuiltInCrawlApps.gitcrawl.needsSecretsForStatus, "built-in status avoids launch keychain reads")
+        let secretStatusManifest = CrawlAppManifest(
+            id: CrawlAppID(rawValue: "secretstatus"),
+            displayName: "Secret Status",
+            description: "Status requires an env secret",
+            binary: .init(name: "secretstatus"),
+            branding: .init(symbolName: "lock", accentColor: "#123456"),
+            paths: .init(),
+            commands: ["status": ["status", "--json"]],
+            capabilities: [.status],
+            configOptions: [.init(id: "token", label: "Token", kind: .secret, envVar: "SECRET_STATUS_TOKEN")])
+        try Self.expect(secretStatusManifest.needsSecretsForStatus, "external secret status can opt into keychain reads")
         try Self.expect(BuiltInCrawlApps.slacrawl.privacy.containsPrivateMessages, "Slack privacy metadata flags local messages")
         try Self.expect(BuiltInCrawlApps.notcrawl.privacy.localOnlyScopes.contains("workspace pages"), "Notion privacy metadata flags workspace pages")
         try Self.expect(BuiltInCrawlApps.slacrawl.install?.package == "vincentkoc/tap/slacrawl", "built-in install metadata exists")
         try Self.expect(BuiltInCrawlApps.gogcli.availability == .comingSoon, "coming soon manifests are marked unavailable")
+        try Self.expect(BuiltInCrawlApps.graincrawl.availability == .available, "graincrawl is available")
+        try Self.expect(BuiltInCrawlApps.graincrawl.commands["status"] == ["status", "--json"], "graincrawl uses crawlkit status command")
+        try Self.expect(
+            BuiltInCrawlApps.graincrawl.commands["refresh"] == ["sync", "--source", "desktop-cache", "--json"],
+            "graincrawl refresh uses desktop cache by default")
         try Self.expect(BuiltInCrawlApps.gitcrawl.commands["status"] == ["status", "--json"], "gitcrawl uses fast status command")
         try Self.expect(BuiltInCrawlApps.gitcrawl.configSections.contains { $0.id == "github" }, "built-in config sections exist")
     }
@@ -211,6 +253,26 @@ enum CrawlBarSelfTest {
         try Self.expect(crawlKitStatus.databases.first?.id == "primary", "crawlkit databases map")
         try Self.expect(crawlKitStatus.databases.first?.modifiedAt != nil, "crawlkit database modified date maps")
         try Self.expect(crawlKitStatus.databases.first?.counts.contains(CrawlCount(id: "messages", label: "Messages", value: 5052)) == true, "crawlkit database counts map")
+
+        let okOutput = """
+        {
+          "schema_version": "crawlkit.control.v1",
+          "app_id": "graincrawl",
+          "state": "ok",
+          "summary": "1 notes",
+          "counts": [{"id": "notes", "label": "Notes", "value": 1}]
+        }
+        """
+        let okResult = CrawlCommandResult(
+            appID: BuiltInCrawlApps.graincrawlID,
+            action: "status",
+            exitCode: 0,
+            stdout: okOutput,
+            stderr: "",
+            startedAt: Date(),
+            finishedAt: Date())
+        let okStatus = CrawlStatusMapper().status(from: okResult, manifest: BuiltInCrawlApps.graincrawl)
+        try Self.expect(okStatus.state == .current, "crawlkit ok state maps to current")
     }
 
     private static func testConfigValuesReachCommandEnvironment() throws {

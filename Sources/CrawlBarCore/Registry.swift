@@ -52,8 +52,27 @@ public struct CrawlAppRegistry: @unchecked Sendable {
         }
     }
 
+    public func installationsForStatus(includeDisabled: Bool = true) throws -> [CrawlAppInstallation] {
+        try self.installations(includeDisabled: includeDisabled, includeSecrets: false).map { installation in
+            guard installation.enabled,
+                  installation.binaryPath != nil,
+                  installation.manifest.needsSecretsForStatus
+            else { return installation }
+            return self.installationWithSecrets(installation)
+        }
+    }
+
     public func installation(for id: CrawlAppID, includeSecrets: Bool = false) throws -> CrawlAppInstallation? {
         try self.installations(includeDisabled: true, includeSecrets: includeSecrets).first { $0.id == id }
+    }
+
+    public func installationForStatus(for id: CrawlAppID) throws -> CrawlAppInstallation? {
+        guard let installation = try self.installation(for: id, includeSecrets: false) else { return nil }
+        guard installation.enabled,
+              installation.binaryPath != nil,
+              installation.manifest.needsSecretsForStatus
+        else { return installation }
+        return self.installationWithSecrets(installation)
     }
 
     public func availableInstallations(includeSecrets: Bool = false) throws -> [CrawlAppInstallation] {
@@ -64,5 +83,21 @@ public struct CrawlAppRegistry: @unchecked Sendable {
         var copy = appConfig
         copy.configValues = self.nativeConfigStore.resolvedConfigValues(appConfig: appConfig, manifest: manifest)
         return copy
+    }
+
+    private func installationWithSecrets(_ installation: CrawlAppInstallation) -> CrawlAppInstallation {
+        let appConfig = CrawlBarAppConfig(
+            id: installation.id,
+            enabled: installation.enabled,
+            configPath: installation.configPathOverride,
+            configValues: installation.configValues)
+        let secretConfig = self.configStore.appConfigWithSecrets(appConfig, manifest: installation.manifest)
+        return CrawlAppInstallation(
+            manifest: installation.manifest,
+            binaryPath: installation.binaryPath,
+            configPathOverride: installation.configPathOverride,
+            configValues: secretConfig.configValues,
+            staleAfterSeconds: installation.staleAfterSeconds,
+            enabled: installation.enabled)
     }
 }

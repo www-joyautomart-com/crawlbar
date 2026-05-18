@@ -117,6 +117,13 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
             case exportsSecrets = "exports_secrets"
             case localOnlyScopes = "local_only_scopes"
         }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.containsPrivateMessages = try container.decodeIfPresent(Bool.self, forKey: .containsPrivateMessages) ?? false
+            self.exportsSecrets = try container.decodeIfPresent(Bool.self, forKey: .exportsSecrets) ?? false
+            self.localOnlyScopes = try container.decodeIfPresent([String].self, forKey: .localOnlyScopes) ?? []
+        }
     }
 
     public enum InstallMethod: String, Codable, Equatable, Sendable {
@@ -230,6 +237,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
     public var paths: Paths
     public var commands: [String: [String]]
     public var capabilities: [CrawlAppCapability]
+    public var statusRequiresSecrets: Bool?
     public var privacy: Privacy
     public var configOptions: [ConfigOption]
     public var configSections: [ConfigSection]
@@ -246,6 +254,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
         paths: Paths,
         commands: [String: [String]],
         capabilities: [CrawlAppCapability],
+        statusRequiresSecrets: Bool? = nil,
         privacy: Privacy = Privacy(),
         configOptions: [ConfigOption] = [],
         configSections: [ConfigSection] = [],
@@ -261,6 +270,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
         self.paths = paths
         self.commands = commands
         self.capabilities = capabilities
+        self.statusRequiresSecrets = statusRequiresSecrets
         self.privacy = privacy
         self.configOptions = configOptions
         self.configSections = configSections
@@ -278,6 +288,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
         case paths
         case commands
         case capabilities
+        case statusRequiresSecrets = "status_requires_secrets"
         case privacy
         case configOptions = "config_options"
         case configSections = "config_sections"
@@ -286,7 +297,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        self.schemaVersion = Self.decodeSchemaVersion(from: container)
         self.id = try container.decode(CrawlAppID.self, forKey: .id)
         self.displayName = try container.decode(String.self, forKey: .displayName)
         self.description = try container.decode(String.self, forKey: .description)
@@ -294,12 +305,103 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
         self.binary = try container.decode(Binary.self, forKey: .binary)
         self.branding = try container.decode(Branding.self, forKey: .branding)
         self.paths = try container.decode(Paths.self, forKey: .paths)
-        self.commands = try container.decode([String: [String]].self, forKey: .commands)
-        self.capabilities = try container.decode([CrawlAppCapability].self, forKey: .capabilities)
+        self.commands = try Self.decodeCommands(from: container, binaryName: self.binary.name)
+        self.capabilities = Self.decodeCapabilities(from: container, commands: self.commands)
+        self.statusRequiresSecrets = try container.decodeIfPresent(Bool.self, forKey: .statusRequiresSecrets)
         self.privacy = try container.decodeIfPresent(Privacy.self, forKey: .privacy) ?? Privacy()
         self.configOptions = try container.decodeIfPresent([ConfigOption].self, forKey: .configOptions) ?? []
         self.configSections = try container.decodeIfPresent([ConfigSection].self, forKey: .configSections) ?? []
         self.install = try container.decodeIfPresent(Install.self, forKey: .install)
+    }
+
+    public var needsSecretsForStatus: Bool {
+        if let statusRequiresSecrets {
+            return statusRequiresSecrets
+        }
+        return self.commands["status"] != nil && self.configOptions.contains { option in
+            option.kind == .secret && option.envVar?.nilIfBlank != nil
+        }
+    }
+
+    private struct CommandEnvelope: Decodable {
+        var argv: [String]
+    }
+
+    private static func decodeSchemaVersion(from container: KeyedDecodingContainer<CodingKeys>) -> Int {
+        if let int = try? container.decode(Int.self, forKey: .schemaVersion) {
+            return int
+        }
+        guard let string = try? container.decode(String.self, forKey: .schemaVersion) else {
+            return 1
+        }
+        return Int(string) ?? 1
+    }
+
+    private static func decodeCommands(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        binaryName: String)
+        throws -> [String: [String]]
+    {
+        if let commands = try? container.decode([String: [String]].self, forKey: .commands) {
+            return commands
+        }
+
+        let envelopes = try container.decode([String: CommandEnvelope].self, forKey: .commands)
+        return envelopes.mapValues { envelope in
+            guard envelope.argv.first == binaryName else { return envelope.argv }
+            return Array(envelope.argv.dropFirst())
+        }
+    }
+
+    private static func decodeCapabilities(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        commands: [String: [String]])
+        -> [CrawlAppCapability]
+    {
+        var capabilities: [CrawlAppCapability] = []
+        if let typed = try? container.decode([CrawlAppCapability].self, forKey: .capabilities) {
+            capabilities.append(contentsOf: typed)
+        } else if let rawValues = try? container.decode([String].self, forKey: .capabilities) {
+            capabilities.append(contentsOf: rawValues.flatMap(Self.capabilities(from:)))
+        }
+
+        for command in commands.keys.sorted() {
+            capabilities.append(contentsOf: Self.capabilities(from: command))
+        }
+
+        var seen = Set<CrawlAppCapability>()
+        return capabilities.filter { seen.insert($0).inserted }
+    }
+
+    private static func capabilities(from rawValue: String) -> [CrawlAppCapability] {
+        switch rawValue {
+        case "status":
+            return [.status]
+        case "doctor":
+            return [.doctor]
+        case "refresh", "sync":
+            return [.refresh]
+        case "search":
+            return [.search]
+        case "publish":
+            return [.publish]
+        case "subscribe":
+            return [.subscribe]
+        case "update":
+            return [.update]
+        case "desktop-cache", "desktop_cache", "desktopcache", "tap", "cache-import":
+            return [.desktopCache]
+        case "markdown", "export", "export-md":
+            return [.exportMarkdown]
+        case "table-export", "export-db", "databases":
+            return [.exportDatabase]
+        case "maintain":
+            return [.maintain]
+        case "git-share":
+            return [.publish, .subscribe, .update]
+        default:
+            return []
+        }
     }
 }
 

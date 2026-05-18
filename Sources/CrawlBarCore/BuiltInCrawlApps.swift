@@ -8,7 +8,7 @@ public enum BuiltInCrawlApps {
     public static let gogcliID = CrawlAppID(rawValue: "gogcli")
     public static let wacliID = CrawlAppID(rawValue: "wacli")
     public static let birdclawID = CrawlAppID(rawValue: "birdclaw")
-    public static let grainclawID = CrawlAppID(rawValue: "grainclaw")
+    public static let graincrawlID = CrawlAppID(rawValue: "graincrawl")
 
     public static let all: [CrawlAppManifest] = [
         Self.gitcrawl,
@@ -18,7 +18,7 @@ public enum BuiltInCrawlApps {
         Self.gogcli,
         Self.wacli,
         Self.birdclaw,
-        Self.grainclaw,
+        Self.graincrawl,
     ]
 
     public static func manifest(for id: CrawlAppID) -> CrawlAppManifest? {
@@ -44,10 +44,10 @@ public enum BuiltInCrawlApps {
         commands: [
             "metadata": ["metadata", "--json"],
             "status": ["status", "--json"],
-            "doctor": ["--json", "doctor"],
-            "refresh": ["refresh"],
+            "doctor": ["doctor", "--json"],
         ],
-        capabilities: [.status, .doctor, .refresh, .search],
+        capabilities: [.status, .doctor, .search],
+        statusRequiresSecrets: false,
         privacy: .init(exportsSecrets: false, localOnlyScopes: ["repositories", "issues", "pull requests"]),
         configOptions: [
             .init(id: "github_token", label: "GitHub token", kind: .secret, help: "Token used for GitHub API refreshes.", placeholder: "ghp_...", envVar: "GITHUB_TOKEN", configKey: "github.token"),
@@ -77,13 +77,15 @@ public enum BuiltInCrawlApps {
             defaultShare: "~/.slacrawl/share"),
         commands: [
             "metadata": ["metadata", "--json"],
-            "status": ["--format", "json", "status"],
-            "doctor": ["--format", "json", "doctor"],
-            "refresh": ["--format", "json", "sync", "--source", "api", "--latest-only"],
-            "publish": ["--format", "json", "publish"],
-            "update": ["--format", "json", "update"],
+            "status": ["status", "--json"],
+            "doctor": ["doctor", "--json"],
+            "refresh": ["--json", "sync", "--source", "desktop"],
+            "desktop-cache-import": ["--json", "sync", "--source", "desktop"],
+            "publish": ["--json", "publish"],
+            "update": ["--json", "update"],
         ],
         capabilities: [.status, .doctor, .refresh, .search, .publish, .subscribe, .update, .desktopCache],
+        statusRequiresSecrets: false,
         privacy: .init(containsPrivateMessages: true, exportsSecrets: false, localOnlyScopes: ["workspaces", "channels", "DMs"]),
         configOptions: [
             .init(id: "slack_token", label: "Slack token", kind: .secret, help: "User or bot token for Slack API sync.", placeholder: "xoxp- or xoxb-", envVar: "SLACK_TOKEN", configKey: "slack.token"),
@@ -114,14 +116,15 @@ public enum BuiltInCrawlApps {
             defaultShare: "~/.discrawl/share"),
         commands: [
             "metadata": ["metadata", "--json"],
-            "status": ["--json", "status"],
-            "doctor": ["--json", "doctor"],
-            "refresh": ["--json", "sync", "--source", "both"],
-            "desktop-cache-import": ["--json", "sync", "--source", "wiretap"],
+            "status": ["status", "--json"],
+            "doctor": ["doctor", "--json"],
+            "refresh": ["--json", "cache-import"],
+            "desktop-cache-import": ["--json", "cache-import"],
             "publish": ["--json", "publish"],
             "update": ["--json", "update"],
         ],
         capabilities: [.status, .doctor, .refresh, .search, .publish, .subscribe, .update, .desktopCache],
+        statusRequiresSecrets: false,
         privacy: .init(containsPrivateMessages: true, exportsSecrets: false, localOnlyScopes: ["@me"]),
         configOptions: [
             .init(id: "discord_token", label: "Discord token", kind: .secret, help: "Token for Discord API or desktop-cache assisted sync.", placeholder: "token", envVar: "DISCORD_TOKEN", configKey: "discord.token"),
@@ -151,14 +154,16 @@ public enum BuiltInCrawlApps {
             defaultShare: "~/.notcrawl/share"),
         commands: [
             "metadata": ["metadata", "--json"],
-            "status": ["status"],
-            "doctor": ["doctor"],
+            "status": ["status", "--json"],
+            "doctor": ["doctor", "--json"],
             "refresh": ["sync", "--source", "desktop"],
+            "desktop-cache-import": ["sync", "--source", "desktop"],
             "export-md": ["export-md"],
             "publish": ["publish"],
             "update": ["update"],
         ],
         capabilities: [.status, .doctor, .refresh, .search, .publish, .subscribe, .update, .exportMarkdown, .exportDatabase, .maintain],
+        statusRequiresSecrets: false,
         privacy: .init(containsPrivateMessages: true, exportsSecrets: false, localOnlyScopes: ["workspace pages", "comments", "exports"]),
         configOptions: [
             .init(id: "notion_token", label: "Notion token", kind: .secret, help: "Token or session credential for Notion sync.", placeholder: "secret_...", envVar: "NOTION_TOKEN", configKey: "notion.token"),
@@ -228,24 +233,41 @@ public enum BuiltInCrawlApps {
         capabilities: [],
         privacy: .init(exportsSecrets: false))
 
-    public static let grainclaw = CrawlAppManifest(
-        id: Self.grainclawID,
-        displayName: "Granola",
-        description: "Granola notes archive connector",
-        availability: .comingSoon,
-        binary: .init(name: "grainclaw"),
+    public static let graincrawl = CrawlAppManifest(
+        id: Self.graincrawlID,
+        displayName: "Granola Archive",
+        description: "Local-first archive for Granola notes, transcripts, summaries, and panels",
+        binary: .init(name: "graincrawl"),
         branding: .init(
-            symbolName: "waveform.and.magnifyingglass",
-            accentColor: "#B56B45",
-            bundleIdentifier: "com.granola.app"),
+            symbolName: "note.text",
+            accentColor: "#D4A017",
+            bundleIdentifier: "com.vincentkoc.graincrawl"),
         paths: .init(
-            defaultConfig: "~/.config/grainclaw/config.toml",
-            configEnv: "GRAINCLAW_CONFIG",
-            defaultDatabase: "~/.config/grainclaw/grainclaw.db",
-            defaultCache: "~/.config/grainclaw/cache",
-            defaultLogs: "~/.config/grainclaw/logs",
-            defaultShare: "~/.config/grainclaw/share"),
-        commands: [:],
-        capabilities: [],
-        privacy: .init(containsPrivateMessages: true, exportsSecrets: false))
+            defaultConfig: "~/.config/graincrawl/config.toml",
+            configEnv: "GRAINCRAWL_CONFIG",
+            defaultDatabase: "~/.config/graincrawl/graincrawl.db",
+            defaultCache: "~/.config/graincrawl/cache",
+            defaultLogs: "~/.config/graincrawl/logs"),
+        commands: [
+            "metadata": ["metadata", "--json"],
+            "status": ["status", "--json"],
+            "doctor": ["doctor", "--json"],
+            "refresh": ["sync", "--source", "desktop-cache", "--json"],
+            "export-md": ["export", "markdown", "--out", "./granola-notes"],
+        ],
+        capabilities: [.status, .doctor, .refresh, .search, .exportMarkdown],
+        statusRequiresSecrets: false,
+        privacy: .init(containsPrivateMessages: true, exportsSecrets: false, localOnlyScopes: ["Granola profile", "graincrawl SQLite archive"]),
+        configOptions: [
+            .init(id: "granola_profile", label: "Granola profile", kind: .string, help: "Granola profile directory to inspect.", placeholder: "~/Library/Application Support/Granola", envVar: "GRAINCRAWL_GRANOLA_PROFILE", configKey: "granola.profile_path"),
+            .init(id: "preferred_source", label: "Preferred source", kind: .choice, help: "Source used by refresh.", defaultValue: "desktop-cache", choices: ["private-api", "desktop-cache"], envVar: "GRAINCRAWL_SOURCE", configKey: "granola.preferred_source"),
+            .init(id: "allow_private_api", label: "Allow private API", kind: .boolean, defaultValue: "true", envVar: "GRAINCRAWL_ALLOW_PRIVATE_API", configKey: "granola.allow_private_api"),
+            .init(id: "allow_desktop_cache", label: "Allow desktop cache", kind: .boolean, defaultValue: "true", configKey: "granola.allow_desktop_cache"),
+            .init(id: "sync_limit", label: "Sync limit", kind: .string, help: "Maximum notes to import per sync run.", defaultValue: "100", configKey: "sync.default_limit"),
+        ],
+        configSections: [
+            .init(id: "granola", title: "Granola", optionIDs: ["granola_profile", "preferred_source", "allow_private_api", "allow_desktop_cache"]),
+            .init(id: "sync", title: "Sync", optionIDs: ["sync_limit"]),
+        ],
+        install: .init(method: .homebrew, package: "vincentkoc/tap/graincrawl"))
 }

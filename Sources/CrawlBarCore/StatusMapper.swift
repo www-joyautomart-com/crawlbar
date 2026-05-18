@@ -348,7 +348,19 @@ public struct CrawlStatusMapper: Sendable {
 
     private func statusValue(_ keys: [String], in object: [String: Any]) -> CrawlAppState? {
         guard let rawValue = self.stringValue(keys, in: object) else { return nil }
-        return CrawlAppState(rawValue: rawValue)
+        if let state = CrawlAppState(rawValue: rawValue) {
+            return state
+        }
+        switch rawValue.lowercased() {
+        case "ok", "success", "healthy", "ready":
+            return .current
+        case "warning", "degraded":
+            return .stale
+        case "failed", "failure":
+            return .error
+        default:
+            return nil
+        }
     }
 
     private func dateValue(_ keys: [String], in object: [String: Any]) -> Date? {

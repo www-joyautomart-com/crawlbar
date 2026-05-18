@@ -19,8 +19,8 @@ enum CrawlBarBrandPalette {
             NSColor(calibratedRed: 0.15, green: 0.83, blue: 0.40, alpha: 1)
         case "birdclaw":
             NSColor(calibratedWhite: 0.02, alpha: 1)
-        case "grainclaw":
-            NSColor(calibratedRed: 0.71, green: 0.42, blue: 0.27, alpha: 1)
+        case "graincrawl":
+            NSColor(calibratedRed: 0.83, green: 0.63, blue: 0.09, alpha: 1)
         default:
             NSColor(hex: manifest?.branding.accentColor ?? "#6E6E73")
         }
@@ -143,7 +143,7 @@ enum CrawlBarIconFactory {
             NSColor(calibratedWhite: 0.02, alpha: 1).setFill()
             tile.fill()
             Self.drawXGlyph(in: rect)
-        case "grainclaw":
+        case "graincrawl":
             NSColor(calibratedRed: 0.96, green: 0.90, blue: 0.80, alpha: 1).setFill()
             tile.fill()
             NSColor(calibratedRed: 0.55, green: 0.30, blue: 0.18, alpha: 0.25).setStroke()
