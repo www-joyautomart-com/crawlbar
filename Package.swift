@@ -21,6 +21,9 @@ let package = Package(
         .executableTarget(
             name: "CrawlBar",
             dependencies: ["CrawlBarCore"],
+            resources: [
+                .process("Resources"),
+            ],
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency"),
             ]),

@@ -12,6 +12,7 @@ enum CrawlBarSelfTest {
         try Self.testStatusSecretsLoadFromNativeConfig()
         try Self.testStatusMapperNormalizesCounts()
         try Self.testActionFailuresPreserveStatusMetadata()
+        try Self.testActionLogStoreReadsRecentResults()
         try Self.testConfigValuesReachCommandEnvironment()
         try Self.testGitcrawlCommandArgumentsInferRepository()
         try Self.testCommandTimeoutEscalates()
@@ -489,6 +490,26 @@ enum CrawlBarSelfTest {
             summary: "status failed")
         let richest = CrawlAppStatus.richestMetadataStatus(emptyRefreshed, fallback: metadata)
         try Self.expect(richest == metadata, "previous rich metadata wins over empty refreshed status")
+    }
+
+    private static func testActionLogStoreReadsRecentResults() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("crawlbar-logs-\(UUID().uuidString)", isDirectory: true)
+        let store = CrawlActionLogStore(directoryURL: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let result = CrawlCommandResult(
+            appID: BuiltInCrawlApps.graincrawlID,
+            action: "refresh",
+            exitCode: 1,
+            stdout: "",
+            stderr: "Granola access token expired",
+            startedAt: Date(timeIntervalSince1970: 1_775_000_000),
+            finishedAt: Date(timeIntervalSince1970: 1_775_000_001))
+        _ = try store.save(result)
+
+        let recent = store.recentResults(limit: 5)
+        try Self.expect(recent.first == result, "action logs decode back into recent command results")
     }
 
     private static func testCommandTimeoutEscalates() throws {

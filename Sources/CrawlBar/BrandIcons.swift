@@ -39,7 +39,7 @@ enum CrawlBarCrawlerTitle {
 
 enum CrawlBarIconFactory {
     static func image(for appID: CrawlAppID, manifest: CrawlAppManifest?, size: CGFloat = 32) -> NSImage {
-        if let image = Self.brandedImage(for: manifest, size: size) {
+        if let image = Self.brandedImage(for: appID, manifest: manifest, size: size) {
             return image
         }
         let image = NSImage(size: NSSize(width: size, height: size))
@@ -96,12 +96,15 @@ enum CrawlBarIconFactory {
         return image
     }
 
-    private static func brandedImage(for manifest: CrawlAppManifest?, size: CGFloat) -> NSImage? {
+    private static func brandedImage(for appID: CrawlAppID, manifest: CrawlAppManifest?, size: CGFloat) -> NSImage? {
         if let iconPath = manifest?.branding.iconPath?.nilIfBlank {
             let expandedPath = NSString(string: iconPath).expandingTildeInPath
             if let image = NSImage(contentsOfFile: expandedPath) {
                 return Self.sizedImage(image, size: size)
             }
+        }
+        if let image = Self.bundledIcon(for: appID) {
+            return Self.sizedImage(image, size: size)
         }
         if let bundleIdentifier = manifest?.branding.bundleIdentifier?.nilIfBlank,
            let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
@@ -109,6 +112,28 @@ enum CrawlBarIconFactory {
             return Self.sizedImage(NSWorkspace.shared.icon(forFile: appURL.path), size: size)
         }
         return nil
+    }
+
+    private static func bundledIcon(for appID: CrawlAppID) -> NSImage? {
+        guard let name = Self.bundledIconName(for: appID),
+              let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "BrandIcons")
+        else {
+            return nil
+        }
+        return NSImage(contentsOf: url)
+    }
+
+    private static func bundledIconName(for appID: CrawlAppID) -> String? {
+        switch appID.rawValue {
+        case "gogcli":
+            "google"
+        case "birdclaw":
+            "x"
+        case "graincrawl":
+            "granola"
+        default:
+            nil
+        }
     }
 
     private static func sizedImage(_ source: NSImage, size: CGFloat) -> NSImage {

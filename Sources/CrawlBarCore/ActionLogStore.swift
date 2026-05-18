@@ -47,6 +47,13 @@ public struct CrawlActionLogStore: @unchecked Sendable {
             .map { $0 }
     }
 
+    public func recentResults(limit: Int = 20) -> [CrawlCommandResult] {
+        self.recent(limit: limit).compactMap { url in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? CrawlCoding.makeJSONDecoder().decode(CrawlCommandResult.self, from: data)
+        }
+    }
+
     public static func defaultDirectory(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
         home
             .appendingPathComponent(".crawlbar", isDirectory: true)

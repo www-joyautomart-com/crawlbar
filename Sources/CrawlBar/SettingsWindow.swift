@@ -68,6 +68,7 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
     @Published var appActionMessage: String?
     @Published var runningActions: [CrawlAppID: String] = [:]
     @Published var actionMessages: [CrawlAppID: String] = [:]
+    @Published var recentResults: [CrawlAppID: CrawlCommandResult] = [:]
     @Published var lastError: String?
     @Published var manifestDiagnostics: [CrawlManifestDiagnostic] = []
 
@@ -127,6 +128,7 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
             if self.selectedAppID == nil || !self.apps.contains(where: { $0.id == self.selectedAppID }) {
                 self.selectedAppID = self.apps.first?.id
             }
+            self.loadRecentResults()
             self.lastError = nil
         } catch {
             CrawlBarLog.config.error("Settings load failed: \(error.localizedDescription, privacy: .public)")
@@ -195,6 +197,7 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
     }
 
     func refreshAll() {
+        self.loadRecentResults()
         self.refreshTask?.cancel()
         let generation = UUID()
         self.refreshGeneration = generation
@@ -272,8 +275,19 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
                 CrawlBarStateBroadcast.statusesDidChange([appID: status])
                 self.runningActions[appID] = nil
                 self.actionMessages[appID] = message
+                self.loadRecentResults()
             }
         }
+    }
+
+    private func loadRecentResults() {
+        var resultsByApp: [CrawlAppID: CrawlCommandResult] = [:]
+        for result in self.logStore.recentResults(limit: 200).sorted(by: { $0.finishedAt > $1.finishedAt }) {
+            if resultsByApp[result.appID] == nil {
+                resultsByApp[result.appID] = result
+            }
+        }
+        self.recentResults = resultsByApp
     }
 
     private func mergeStatuses(_ incoming: [CrawlAppID: CrawlAppStatus]) {
@@ -592,6 +606,7 @@ struct CrawlBarSettingsView: View {
                     globalRefreshFrequency: self.model.refreshFrequency,
                     installation: self.model.installations[selectedID],
                     status: self.model.statuses[selectedID],
+                    latestResult: self.model.recentResults[selectedID],
                     isRefreshing: self.model.isRefreshing,
                     runningAction: self.model.runningActions[selectedID],
                     actionMessage: self.model.actionMessages[selectedID],
@@ -913,6 +928,7 @@ struct CrawlBarAppDetailView: View {
     let globalRefreshFrequency: RefreshFrequency
     let installation: CrawlAppInstallation?
     let status: CrawlAppStatus?
+    let latestResult: CrawlCommandResult?
     let isRefreshing: Bool
     let runningAction: String?
     let actionMessage: String?
@@ -1012,8 +1028,7 @@ struct CrawlBarAppDetailView: View {
     private var selectedContent: some View {
         switch self.selectedTab {
         case .overview:
-            self.statusSummary
-            self.metrics
+            self.overviewDashboard
         case .data:
             self.databases
             self.metrics
@@ -1045,11 +1060,29 @@ struct CrawlBarAppDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
+    private var overviewDashboard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(minimum: 260), spacing: 14, alignment: .top),
+                    GridItem(.flexible(minimum: 260), spacing: 14, alignment: .top),
+                ],
+                alignment: .leading,
+                spacing: 14)
+            {
+                self.statusSummary
+                self.sourceSummary
+                self.latestRunSummary
+                self.metricsPreview
+            }
+        }
+    }
+
     private var statusSummary: some View {
-        CrawlBarPanel {
+        CrawlBarPanel(title: "Status") {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
                 GridRow {
-                    CrawlBarFact(label: "Status", value: self.status?.summary ?? self.statusFallback)
+                    CrawlBarFact(label: "Current", value: self.status?.summary ?? self.statusFallback)
                     CrawlBarFact(label: "Last Sync", value: self.lastSyncSummary)
                 }
                 GridRow {
@@ -1058,6 +1091,79 @@ struct CrawlBarAppDetailView: View {
                         value: self.databaseSummary)
                     CrawlBarFact(label: "Binary", value: self.binarySummary)
                 }
+            }
+            if let issue = self.primaryIssue {
+                CrawlBarIssueBanner(message: issue)
+            }
+        }
+    }
+
+    private var sourceSummary: some View {
+        CrawlBarPanel(title: "Sources") {
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
+                GridRow {
+                    CrawlBarFact(label: "Refresh", value: self.refreshSourceSummary)
+                    CrawlBarFact(label: "Archive", value: self.archiveSourceSummary)
+                }
+                GridRow {
+                    CrawlBarFact(label: "Snapshot", value: self.snapshotSummary)
+                    CrawlBarFact(label: "Config", value: self.configSourceSummary)
+                }
+            }
+        }
+    }
+
+    private var latestRunSummary: some View {
+        CrawlBarPanel(title: "Latest Run") {
+            if let latestResult {
+                HStack(spacing: 8) {
+                    CrawlBarStatusDot(state: latestResult.succeeded ? .current : .error)
+                    Text(Self.actionTitle(latestResult.action))
+                        .font(.callout.weight(.medium))
+                    Text(latestResult.succeeded ? "finished" : "failed")
+                        .font(.callout)
+                        .foregroundStyle(latestResult.succeeded ? Color.secondary : Color.red)
+                    Spacer(minLength: 8)
+                    Text(CrawlBarDateText.relative(latestResult.finishedAt))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                CrawlBarFact(label: "Exit", value: "\(latestResult.exitCode)")
+                if let output = Self.resultMessage(latestResult) {
+                    Text(output)
+                        .font(.caption)
+                        .foregroundStyle(latestResult.succeeded ? Color.secondary : Color.red)
+                        .lineLimit(3)
+                        .truncationMode(.tail)
+                        .textSelection(.enabled)
+                }
+            } else {
+                Text("No action logs yet")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var metricsPreview: some View {
+        if !self.overviewCounts.isEmpty {
+            CrawlBarPanel(title: "Data") {
+                ForEach(self.overviewCounts.prefix(4)) { count in
+                    CrawlBarMetricRow(label: count.label, value: "\(count.value)")
+                }
+                if self.overviewCounts.count > 4 {
+                    Text("+\(self.overviewCounts.count - 4) more in Data")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else {
+            CrawlBarPanel(title: "Data") {
+                Text("No counts reported")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -1334,6 +1440,92 @@ struct CrawlBarAppDetailView: View {
             CrawlBarFact(label: "Local-only scopes", value: self.manifest?.privacy.localOnlyScopes.joined(separator: ", ").nilIfBlank ?? "None")
             CrawlBarFact(label: "Action logs", value: CrawlActionLogStore.defaultDirectory().path)
         }
+    }
+
+    private var primaryIssue: String? {
+        if let error = self.status?.errors.first?.nilIfBlank {
+            return error
+        }
+        if let warning = self.status?.warnings.first?.nilIfBlank {
+            return warning
+        }
+        guard let latestResult, !latestResult.succeeded else { return nil }
+        return Self.resultMessage(latestResult) ?? "\(Self.actionTitle(latestResult.action)) failed with exit \(latestResult.exitCode)"
+    }
+
+    private var refreshSourceSummary: String {
+        if self.app.id == BuiltInCrawlApps.gitcrawlID {
+            return "GitHub API (remote)"
+        }
+        if self.app.id == BuiltInCrawlApps.graincrawlID {
+            switch self.app.configValues["preferred_source"]?.nilIfBlank ?? "private-api" {
+            case "desktop-cache":
+                return "Granola desktop cache"
+            case "private-api":
+                return "Granola private API (remote)"
+            default:
+                return self.app.configValues["preferred_source"] ?? "Granola source"
+            }
+        }
+        if self.manifest?.capabilities.contains(.desktopCache) == true {
+            return "Desktop cache (local)"
+        }
+        if self.manifest?.capabilities.contains(.refresh) == true {
+            return "Crawler CLI"
+        }
+        return "Not available"
+    }
+
+    private var archiveSourceSummary: String {
+        if let database = self.primaryDatabase ?? self.status?.databases.first {
+            return database.path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? database.label
+        }
+        if let databasePath = self.status?.databasePath ?? self.manifest?.paths.defaultDatabase {
+            return URL(fileURLWithPath: databasePath).lastPathComponent
+        }
+        return "Unknown"
+    }
+
+    private var snapshotSummary: String {
+        guard let share = self.status?.share else {
+            return self.app.shareEnabled ? "Configured, not reported" : "Off"
+        }
+        let location = share.remote?.nilIfBlank ?? share.repoPath?.nilIfBlank ?? "No remote"
+        if let branch = share.branch?.nilIfBlank {
+            return "\(location) · \(branch)"
+        }
+        return location
+    }
+
+    private var configSourceSummary: String {
+        if let configPath = self.status?.configPath ?? self.app.configPath ?? self.manifest?.paths.defaultConfig {
+            return URL(fileURLWithPath: configPath).lastPathComponent
+        }
+        return "None"
+    }
+
+    private static func actionTitle(_ action: String) -> String {
+        switch action {
+        case "refresh":
+            "Sync"
+        case "doctor":
+            "Doctor"
+        case "unlock":
+            "Unlock"
+        case "publish":
+            "Publish"
+        case "update":
+            "Update"
+        default:
+            action
+        }
+    }
+
+    private static func resultMessage(_ result: CrawlCommandResult) -> String? {
+        (result.stderr.nilIfBlank ?? result.stdout.nilIfBlank)?
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .first
+            .map(String.init)
     }
 
     private var effectiveState: CrawlAppState {
@@ -1639,6 +1831,27 @@ struct CrawlBarFact: View {
                 .textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct CrawlBarIssueBanner: View {
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+            Text(self.message)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .lineLimit(3)
+                .textSelection(.enabled)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.red.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 
