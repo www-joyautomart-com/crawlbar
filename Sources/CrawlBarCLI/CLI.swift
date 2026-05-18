@@ -218,6 +218,7 @@ enum CrawlBarCLI {
             installations = [installation]
         } else {
             installations = try registry.availableInstallations(includeSecrets: false)
+                .filter { Self.queryAction(for: $0) != nil }
         }
 
         let results = installations.map { installation -> CrawlCommandResult in

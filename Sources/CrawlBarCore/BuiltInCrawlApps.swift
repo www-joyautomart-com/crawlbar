@@ -123,11 +123,10 @@ public enum BuiltInCrawlApps {
             "doctor": ["doctor", "--json"],
             "refresh": ["--json", "cache-import"],
             "desktop-cache-import": ["--json", "cache-import"],
-            "query": ["sql"],
             "publish": ["--json", "publish"],
             "update": ["--json", "update"],
         ],
-        capabilities: [.status, .doctor, .refresh, .search, .publish, .subscribe, .update, .desktopCache],
+        capabilities: [.status, .doctor, .refresh, .publish, .subscribe, .update, .desktopCache],
         statusRequiresSecrets: false,
         privacy: .init(containsPrivateMessages: true, exportsSecrets: false, localOnlyScopes: ["@me"]),
         configOptions: [
