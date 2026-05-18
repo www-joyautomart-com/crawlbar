@@ -206,6 +206,15 @@ enum CrawlBarCLI {
             guard let installation = try registry.installation(for: appID, includeSecrets: true) else {
                 throw CLIError.usage("unknown app: \(appID.rawValue)")
             }
+            guard installation.manifest.availability == .available else {
+                throw CLIError.usage("\(installation.manifest.displayName) is coming soon")
+            }
+            guard installation.enabled else {
+                throw CLIError.usage("\(appID.rawValue) is disabled")
+            }
+            guard installation.binaryPath != nil else {
+                throw CLIError.usage("\(installation.manifest.binary.name) is not on PATH")
+            }
             installations = [installation]
         } else {
             installations = try registry.availableInstallations(includeSecrets: true)
