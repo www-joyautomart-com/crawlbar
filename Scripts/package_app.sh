@@ -18,6 +18,9 @@ mkdir -p "$MACOS_DIR" "$HELPERS_DIR" "$RESOURCES_DIR"
 
 cp ".build/release/CrawlBar" "$MACOS_DIR/CrawlBar"
 cp ".build/release/crawlbarctl" "$HELPERS_DIR/crawlbar"
+if [ -d ".build/release/CrawlBar_CrawlBar.bundle" ]; then
+  cp -R ".build/release/CrawlBar_CrawlBar.bundle" "$APP_DIR/CrawlBar_CrawlBar.bundle"
+fi
 Scripts/generate_app_icon.swift "$RESOURCES_DIR/CrawlBar.icns"
 
 cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'

@@ -117,6 +117,7 @@ enum CrawlBarIconFactory {
     private static func bundledIcon(for appID: CrawlAppID) -> NSImage? {
         guard let name = Self.bundledIconName(for: appID),
               let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "BrandIcons")
+                ?? Bundle.module.url(forResource: name, withExtension: "png")
         else {
             return nil
         }
