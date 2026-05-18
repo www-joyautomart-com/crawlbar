@@ -278,7 +278,7 @@ enum CrawlBarCLI {
         allApps: Bool = false)
         -> String?
     {
-        if (allApps || !Self.queryLooksLikeSQL(queryArguments)), installation.manifest.commands["search"] != nil {
+        if !Self.queryLooksLikeSQL(queryArguments), installation.manifest.commands["search"] != nil {
             return "search"
         }
         return ["query", "sql", "search"].first { installation.manifest.commands[$0] != nil }
