@@ -445,6 +445,62 @@ enum CrawlBarSelfTest {
         try Self.expect(
             queryResult.stdout == "search --json openclaw/openclaw --query stale branches",
             "gitcrawl query infers repository and joins query text")
+
+        let storeURL = directory.appendingPathComponent("stores/generic-store", isDirectory: true)
+        let genericConfigURL = directory.appendingPathComponent("gitcrawl-generic.toml")
+        let genericDatabaseURL = storeURL.appendingPathComponent("data/gitcrawl.db")
+        let reportURL = storeURL.appendingPathComponent("reports/latest-status.json")
+        try FileManager.default.createDirectory(
+            at: genericDatabaseURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: reportURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        try Data("db_path = \"\(genericDatabaseURL.path)\"\n".utf8).write(to: genericConfigURL)
+        try Data(#"{"repository":{"owner":"openclaw","name":"openclaw"}}"#.utf8).write(to: reportURL)
+        let genericManifest = CrawlAppManifest(
+            id: BuiltInCrawlApps.gitcrawlID,
+            displayName: "Git Crawl",
+            description: "A git crawler",
+            binary: .init(name: scriptURL.path),
+            branding: .init(symbolName: "tray", accentColor: "#123456"),
+            paths: .init(defaultConfig: genericConfigURL.path),
+            commands: ["query": ["search", "--json"]],
+            capabilities: [.search])
+        let genericInstallation = CrawlAppInstallation(manifest: genericManifest, binaryPath: scriptURL.path)
+        let genericQueryResult = try CrawlCommandRunner().run(
+            installation: genericInstallation,
+            action: "query",
+            extraArguments: ["manifest"],
+            timeoutSeconds: 5)
+        try Self.expect(
+            genericQueryResult.stdout == "search --json openclaw/openclaw --query manifest",
+            "gitcrawl query infers repository from latest report when db filename is generic")
+
+        let missingReportConfigURL = directory.appendingPathComponent("gitcrawl-missing-report.toml")
+        let missingReportDatabaseURL = directory.appendingPathComponent("other-store/data/gitcrawl.db")
+        try FileManager.default.createDirectory(
+            at: missingReportDatabaseURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        try Data("db_path = \"\(missingReportDatabaseURL.path)\"\n".utf8).write(to: missingReportConfigURL)
+        let missingReportManifest = CrawlAppManifest(
+            id: BuiltInCrawlApps.gitcrawlID,
+            displayName: "Git Crawl",
+            description: "A git crawler",
+            binary: .init(name: scriptURL.path),
+            branding: .init(symbolName: "tray", accentColor: "#123456"),
+            paths: .init(defaultConfig: missingReportConfigURL.path),
+            commands: ["query": ["search", "--json"]],
+            capabilities: [.search])
+        let missingReportInstallation = CrawlAppInstallation(manifest: missingReportManifest, binaryPath: scriptURL.path)
+        let missingReportQueryResult = try CrawlCommandRunner().run(
+            installation: missingReportInstallation,
+            action: "query",
+            extraArguments: ["manifest"],
+            timeoutSeconds: 5)
+        try Self.expect(
+            missingReportQueryResult.stdout == "search --json manifest",
+            "gitcrawl query does not infer repository from unrelated global reports")
     }
 
     private static func testActionFailuresPreserveStatusMetadata() throws {

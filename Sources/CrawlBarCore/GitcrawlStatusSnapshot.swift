@@ -8,8 +8,10 @@ public enum GitcrawlStatusSnapshot {
         let filename = URL(fileURLWithPath: databasePath).lastPathComponent
         let stem = filename.replacingOccurrences(of: ".sync.db", with: "")
         let parts = stem.split(separator: "__", maxSplits: 1).map(String.init)
-        guard parts.count == 2 else { return nil }
-        return "\(parts[0])/\(parts[1])"
+        if parts.count == 2 {
+            return "\(parts[0])/\(parts[1])"
+        }
+        return Self.adjacentReportURL(databasePath: databasePath).flatMap(Self.reportRepository)
     }
 
     public static func status(for installation: CrawlAppInstallation) -> CrawlAppStatus? {
@@ -66,12 +68,7 @@ public enum GitcrawlStatusSnapshot {
 
     private static func reportURL(for installation: CrawlAppInstallation) -> URL? {
         if let databasePath = Self.databasePath(for: installation) {
-            let databaseURL = URL(fileURLWithPath: databasePath)
-            let reportURL = databaseURL
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("reports/latest-status.json")
-            if FileManager.default.fileExists(atPath: reportURL.path) {
+            if let reportURL = Self.adjacentReportURL(databasePath: databasePath) {
                 return reportURL
             }
         }
@@ -91,6 +88,34 @@ public enum GitcrawlStatusSnapshot {
             candidates.append((reportURL, values?.contentModificationDate ?? .distantPast))
         }
         return candidates.sorted { $0.modifiedAt > $1.modifiedAt }.first?.url
+    }
+
+    private static func adjacentReportURL(databasePath: String) -> URL? {
+        let databaseURL = URL(fileURLWithPath: databasePath)
+        let reportURL = databaseURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("reports/latest-status.json")
+        return FileManager.default.fileExists(atPath: reportURL.path) ? reportURL : nil
+    }
+
+    private static func reportRepository(_ reportURL: URL) -> String? {
+        guard let data = try? Data(contentsOf: reportURL),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let repository = object["repository"] as? [String: Any]
+        else { return nil }
+
+        if let fullName = repository["fullName"] as? String ?? repository["full_name"] as? String,
+           fullName.contains("/")
+        {
+            return fullName
+        }
+        if let owner = repository["owner"] as? String,
+           let name = repository["name"] as? String
+        {
+            return "\(owner)/\(name)"
+        }
+        return nil
     }
 
     private static func databasePath(for installation: CrawlAppInstallation) -> String? {

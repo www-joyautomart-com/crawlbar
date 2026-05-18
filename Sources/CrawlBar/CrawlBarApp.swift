@@ -150,7 +150,11 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
         if installation.manifest.availability == .comingSoon { return .disabled }
         if !installation.enabled { return .disabled }
         if installation.binaryPath == nil { return .needsConfig }
-        return status?.state ?? .unknown
+        let state = status?.state ?? .unknown
+        if installation.id == BuiltInCrawlApps.graincrawlID, state == .error {
+            return .stale
+        }
+        return state
     }
 
     private func shortStateLabel(for state: CrawlAppState) -> String {

@@ -1866,6 +1866,7 @@ struct CrawlBarIssueBanner: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(self.color.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .help(self.message)
     }
 
     private var color: Color {
@@ -2084,13 +2085,18 @@ struct CrawlBarConfigOptionField: View {
     }
 
     private var choices: [String] {
-        if self.option.choices.contains(self.value) {
-            return self.option.choices
+        var resolved = self.option.choices
+        if let defaultValue = self.option.defaultValue?.nilIfBlank,
+           !resolved.contains(defaultValue)
+        {
+            resolved.insert(defaultValue, at: 0)
         }
-        if let defaultValue = self.option.defaultValue, !self.option.choices.contains(defaultValue) {
-            return [defaultValue] + self.option.choices
+        if let currentValue = self.value.nilIfBlank,
+           !resolved.contains(currentValue)
+        {
+            resolved.insert(currentValue, at: 0)
         }
-        return self.option.choices
+        return resolved
     }
 
     private var booleanBinding: Binding<Bool> {
