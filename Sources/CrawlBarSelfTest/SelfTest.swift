@@ -723,6 +723,42 @@ enum CrawlBarSelfTest {
 
         let recent = store.recentResults(limit: 5)
         try Self.expect(recent.first == result, "action logs decode back into recent command results")
+
+        let successfulJSONResult = CrawlCommandResult(
+            appID: BuiltInCrawlApps.graincrawlID,
+            action: "refresh",
+            exitCode: 0,
+            stdout: """
+            {"notes":1}
+            """,
+            stderr: "",
+            startedAt: Date(timeIntervalSince1970: 1_775_000_002),
+            finishedAt: Date(timeIntervalSince1970: 1_775_000_003))
+        try Self.expect(successfulJSONResult.userFacingRunMessage == nil, "successful stdout is not shown as a run message")
+        try Self.expect(!successfulJSONResult.shouldShowExitCode, "successful runs do not show exit code")
+
+        let warningResult = CrawlCommandResult(
+            appID: BuiltInCrawlApps.graincrawlID,
+            action: "refresh",
+            exitCode: 0,
+            stdout: """
+            {"notes":1}
+            """,
+            stderr: "Used cached Granola data",
+            startedAt: Date(timeIntervalSince1970: 1_775_000_004),
+            finishedAt: Date(timeIntervalSince1970: 1_775_000_005))
+        try Self.expect(warningResult.userFacingRunMessage == "Used cached Granola data", "successful stderr can still surface a warning")
+
+        let failedStdoutResult = CrawlCommandResult(
+            appID: BuiltInCrawlApps.graincrawlID,
+            action: "refresh",
+            exitCode: 1,
+            stdout: "Granola refresh failed",
+            stderr: "",
+            startedAt: Date(timeIntervalSince1970: 1_775_000_006),
+            finishedAt: Date(timeIntervalSince1970: 1_775_000_007))
+        try Self.expect(failedStdoutResult.userFacingRunMessage == "Granola refresh failed", "failed stdout is shown as a run message")
+        try Self.expect(failedStdoutResult.shouldShowExitCode, "failed runs show exit code")
     }
 
     private static func testCommandTimeoutEscalates() throws {

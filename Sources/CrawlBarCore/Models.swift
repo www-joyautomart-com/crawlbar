@@ -885,3 +885,23 @@ public struct CrawlCommandResult: Codable, Equatable, Sendable {
         self.finishedAt = finishedAt
     }
 }
+
+public extension CrawlCommandResult {
+    var userFacingRunMessage: String? {
+        if self.succeeded {
+            return Self.firstLine(in: self.stderr)
+        }
+        return Self.firstLine(in: self.stderr) ?? Self.firstLine(in: self.stdout)
+    }
+
+    var shouldShowExitCode: Bool {
+        !self.succeeded
+    }
+
+    private static func firstLine(in output: String) -> String? {
+        output.nilIfBlank?
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .first
+            .map(String.init)
+    }
+}

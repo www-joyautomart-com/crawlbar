@@ -1100,8 +1100,10 @@ struct CrawlBarAppDetailView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                CrawlBarFact(label: "Exit", value: "\(latestResult.exitCode)")
-                if let output = Self.resultMessage(latestResult) {
+                if latestResult.shouldShowExitCode {
+                    CrawlBarFact(label: "Exit", value: "\(latestResult.exitCode)")
+                }
+                if let output = latestResult.userFacingRunMessage {
                     Text(output)
                         .font(.caption)
                         .foregroundStyle(latestResult.succeeded ? Color.secondary : Color.red)
@@ -1421,7 +1423,7 @@ struct CrawlBarAppDetailView: View {
             return warning
         }
         guard let latestResult, !latestResult.succeeded else { return nil }
-        return Self.resultMessage(latestResult) ?? "\(Self.actionTitle(latestResult.action)) failed with exit \(latestResult.exitCode)"
+        return latestResult.userFacingRunMessage ?? "\(Self.actionTitle(latestResult.action)) failed with exit \(latestResult.exitCode)"
     }
 
     private var issueState: CrawlAppState {
@@ -1521,13 +1523,6 @@ struct CrawlBarAppDetailView: View {
         default:
             action
         }
-    }
-
-    private static func resultMessage(_ result: CrawlCommandResult) -> String? {
-        (result.stderr.nilIfBlank ?? result.stdout.nilIfBlank)?
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .first
-            .map(String.init)
     }
 
     private var effectiveState: CrawlAppState {
