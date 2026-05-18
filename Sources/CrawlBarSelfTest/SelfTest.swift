@@ -129,6 +129,7 @@ enum CrawlBarSelfTest {
         try Self.expect(objectManifest.commands["status"] == ["status", "--json"], "crawlkit command argv strips binary")
         try Self.expect(objectManifest.commands["query"] == ["--json", "sql"], "crawlkit query sample SQL is stripped")
         try Self.expect(objectManifest.commands["refresh"] == ["sync", "--json"], "crawlkit sync command aliases to refresh")
+        try Self.expect(objectManifest.commands["desktop-cache-import"] == ["tap", "--json"], "crawlkit tap command aliases to desktop cache import")
         try Self.expect(objectManifest.capabilities.contains(.refresh), "crawlkit sync capability maps to refresh")
         try Self.expect(objectManifest.capabilities.contains(.search), "crawlkit SQL/query capability maps to search")
         try Self.expect(objectManifest.capabilities.contains(.desktopCache), "crawlkit tap capability maps to desktop cache")

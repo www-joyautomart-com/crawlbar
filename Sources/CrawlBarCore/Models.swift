@@ -376,6 +376,14 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
         if normalized["refresh"] == nil, let sync = normalized["sync"] {
             normalized["refresh"] = sync
         }
+        if normalized["desktop-cache-import"] == nil {
+            for alias in Self.desktopCacheCommandAliases where alias != "desktop-cache-import" {
+                if let command = normalized[alias] {
+                    normalized["desktop-cache-import"] = command
+                    break
+                }
+            }
+        }
         return normalized
     }
 
@@ -415,7 +423,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
             return [.subscribe]
         case "update":
             return [.update]
-        case "desktop-cache", "desktop_cache", "desktopcache", "desktop-cache-import", "tap", "cache-import":
+        case let value where Self.desktopCacheCommandAliases.contains(value):
             return [.desktopCache]
         case "markdown", "export", "export-md":
             return [.exportMarkdown]
@@ -429,6 +437,15 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
             return []
         }
     }
+
+    private static let desktopCacheCommandAliases = [
+        "desktop-cache-import",
+        "desktop-cache",
+        "desktop_cache",
+        "desktopcache",
+        "cache-import",
+        "tap",
+    ]
 }
 
 public enum CrawlAppCapability: String, Codable, Equatable, Sendable, CaseIterable {
