@@ -116,7 +116,8 @@ Actions are manifest command arrays. CrawlBar does not shell-expand them.
 - `query` should run a local read-only search or SQL-ish query. CrawlBar passes
   user query text as additional argv after the manifest command array.
 - `publish`, `update`, and exporter actions are optional and should return JSON when possible.
-- desktop-cache actions should use public names such as `desktopcache` or `tap`.
+- desktop-cache actions should use public names such as `desktop-cache-import`,
+  `desktopcache`, or `tap`.
   Existing `wiretap` command names can stay as backward-compatible aliases, but
   new metadata should not advertise `wiretap`.
 

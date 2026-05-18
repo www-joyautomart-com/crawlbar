@@ -219,14 +219,14 @@ enum CrawlBarCLI {
             installations = [installation]
         } else {
             installations = try registry.availableInstallations(includeSecrets: false)
-                .filter { Self.queryAction(for: $0, queryArguments: queryArguments, allApps: true) != nil }
+                .filter { Self.queryAction(for: $0, queryArguments: queryArguments) != nil }
         }
         guard !installations.isEmpty else {
             throw CLIError.usage("no query-capable crawlers are enabled and on PATH")
         }
 
         let results = installations.map { installation -> CrawlCommandResult in
-            guard let action = Self.queryAction(for: installation, queryArguments: queryArguments, allApps: isAllApps) else {
+            guard let action = Self.queryAction(for: installation, queryArguments: queryArguments) else {
                 return CrawlCommandResult(
                     appID: installation.id,
                     action: "query",
@@ -274,14 +274,16 @@ enum CrawlBarCLI {
 
     private static func queryAction(
         for installation: CrawlAppInstallation,
-        queryArguments: [String],
-        allApps: Bool = false)
+        queryArguments: [String])
         -> String?
     {
-        if !Self.queryLooksLikeSQL(queryArguments), installation.manifest.commands["search"] != nil {
+        if Self.queryLooksLikeSQL(queryArguments) {
+            return ["query", "sql"].first { installation.manifest.commands[$0] != nil }
+        }
+        if installation.manifest.commands["search"] != nil {
             return "search"
         }
-        return ["query", "sql", "search"].first { installation.manifest.commands[$0] != nil }
+        return ["query", "sql"].first { installation.manifest.commands[$0] != nil }
     }
 
     private static func queryLooksLikeSQL(_ arguments: [String]) -> Bool {

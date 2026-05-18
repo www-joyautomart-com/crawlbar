@@ -98,6 +98,19 @@ enum CrawlBarSelfTest {
           "privacy": {"exports_secrets": false}
         }
         """.utf8).write(to: directory.appendingPathComponent("objectcrawl.json"))
+        try Data("""
+        {
+          "id": "cachecrawl",
+          "display_name": "Cache Crawl",
+          "description": "A desktop cache test manifest",
+          "binary": {"name": "cachecrawl"},
+          "branding": {"symbol_name": "tray", "accent_color": "#123456"},
+          "paths": {"default_config": "~/.cachecrawl/config.toml"},
+          "commands": {
+            "desktop-cache-import": ["sync", "--source", "desktop-cache"]
+          }
+        }
+        """.utf8).write(to: directory.appendingPathComponent("cachecrawl.json"))
         try Data("{ bad json".utf8).write(to: directory.appendingPathComponent("broken.json"))
 
         let config = CrawlBarConfig(manifestDirectories: [directory.path])
@@ -120,6 +133,10 @@ enum CrawlBarSelfTest {
         try Self.expect(objectManifest.capabilities.contains(.search), "crawlkit SQL/query capability maps to search")
         try Self.expect(objectManifest.capabilities.contains(.desktopCache), "crawlkit tap capability maps to desktop cache")
         try Self.expect(objectManifest.capabilities.contains(.publish), "crawlkit git-share capability maps to publish")
+        guard let cacheManifest = manifests.first(where: { $0.id.rawValue == "cachecrawl" }) else {
+            throw SelfTestError.failed("desktop cache manifest loads from disk")
+        }
+        try Self.expect(cacheManifest.capabilities.contains(.desktopCache), "desktop-cache-import command maps to desktop cache")
         try Self.expect(diagnostics.contains { $0.path.hasSuffix("broken.json") }, "external manifest parse errors are reported")
         try Self.expect(installations.contains { $0.id == manifest.id }, "external manifests appear as installations")
         try Self.expect(BuiltInCrawlApps.gitcrawl.configOptions.contains { $0.id == "embedding_model" }, "built-in config options exist")
@@ -147,6 +164,7 @@ enum CrawlBarSelfTest {
         try Self.expect(
             BuiltInCrawlApps.graincrawl.commands["desktop-cache-import"] == ["sync", "--source", "desktop-cache", "--json"],
             "graincrawl exposes explicit desktop cache import")
+        try Self.expect(BuiltInCrawlApps.graincrawl.capabilities.contains(.desktopCache), "graincrawl advertises desktop cache capability")
         try Self.expect(
             BuiltInCrawlApps.graincrawl.commands["query"] == ["--json", "sql"],
             "graincrawl query emits JSON by default")
@@ -158,6 +176,7 @@ enum CrawlBarSelfTest {
         try Self.expect(BuiltInCrawlApps.slacrawl.commands["search"] == ["--json", "search"], "Slack exposes text search action")
         try Self.expect(BuiltInCrawlApps.discrawl.commands["query"] == nil, "Discord does not advertise stale SQL action")
         try Self.expect(!BuiltInCrawlApps.discrawl.capabilities.contains(.search), "Discord search capability waits for upstream metadata")
+        try Self.expect(BuiltInCrawlApps.notcrawl.capabilities.contains(.desktopCache), "Notion advertises desktop cache capability")
         try Self.expect(BuiltInCrawlApps.gitcrawl.configSections.contains { $0.id == "github" }, "built-in config sections exist")
     }
 

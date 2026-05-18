@@ -415,7 +415,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
             return [.subscribe]
         case "update":
             return [.update]
-        case "desktop-cache", "desktop_cache", "desktopcache", "tap", "cache-import":
+        case "desktop-cache", "desktop_cache", "desktopcache", "desktop-cache-import", "tap", "cache-import":
             return [.desktopCache]
         case "markdown", "export", "export-md":
             return [.exportMarkdown]

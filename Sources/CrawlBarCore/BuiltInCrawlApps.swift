@@ -168,7 +168,7 @@ public enum BuiltInCrawlApps {
             "publish": ["publish"],
             "update": ["update"],
         ],
-        capabilities: [.status, .doctor, .refresh, .search, .publish, .subscribe, .update, .exportMarkdown, .exportDatabase, .maintain],
+        capabilities: [.status, .doctor, .refresh, .search, .publish, .subscribe, .update, .desktopCache, .exportMarkdown, .exportDatabase, .maintain],
         statusRequiresSecrets: false,
         privacy: .init(containsPrivateMessages: true, exportsSecrets: false, localOnlyScopes: ["workspace pages", "comments", "exports"]),
         configOptions: [
@@ -265,7 +265,7 @@ public enum BuiltInCrawlApps {
             "search": ["--json", "search"],
             "export-md": ["export", "markdown", "--out", "./granola-notes"],
         ],
-        capabilities: [.status, .doctor, .refresh, .search, .exportMarkdown],
+        capabilities: [.status, .doctor, .refresh, .search, .desktopCache, .exportMarkdown],
         statusRequiresSecrets: false,
         privacy: .init(containsPrivateMessages: true, exportsSecrets: false, localOnlyScopes: ["Granola profile", "graincrawl SQLite archive"]),
         configOptions: [
