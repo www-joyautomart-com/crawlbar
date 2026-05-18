@@ -206,6 +206,7 @@ enum CrawlBarSelfTest {
             configOptions: [
                 .init(id: "openai_api_key", label: "OpenAI API key", kind: .secret, configKey: "openai.api_key"),
                 .init(id: "embedding_model", label: "Embedding model", kind: .choice, configKey: "embeddings.model"),
+                .init(id: "sync_limit", label: "Sync limit", kind: .number, configKey: "sync.default_limit"),
             ])
         var appConfig = CrawlBarAppConfig(id: manifest.id)
         let nativeStore = CrawlNativeConfigStore()
@@ -218,11 +219,13 @@ enum CrawlBarSelfTest {
 
         appConfig.configValues = nativeStore.resolvedConfigValues(appConfig: appConfig, manifest: manifest)
         appConfig.configValues["embedding_model"] = "text-embedding-3-large"
+        appConfig.configValues["sync_limit"] = "100"
         try nativeStore.write(appConfig: appConfig, manifest: manifest)
         let content = try String(contentsOf: configURL, encoding: .utf8)
         try Self.expect(content.contains("api_key = \"from-file\""), "native TOML values preserve existing keys")
         try Self.expect(content.contains("[embeddings]"), "native TOML section writes")
         try Self.expect(content.contains("model = \"text-embedding-3-large\""), "native TOML value writes")
+        try Self.expect(content.contains("default_limit = 100"), "native TOML number writes without quotes")
 
         appConfig.configValues.removeValue(forKey: "openai_api_key")
         try nativeStore.write(appConfig: appConfig, manifest: manifest)

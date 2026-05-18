@@ -144,6 +144,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
         case string
         case secret
         case boolean
+        case number
         case choice
     }
 

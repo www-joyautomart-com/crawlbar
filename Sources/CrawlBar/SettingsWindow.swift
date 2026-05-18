@@ -2239,6 +2239,10 @@ struct CrawlBarConfigOptionField: View {
             TextField(self.option.placeholder ?? "Value", text: self.$value)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 300)
+        case .number:
+            TextField(self.option.placeholder ?? "0", text: self.$value)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 120)
         }
     }
 

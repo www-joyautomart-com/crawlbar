@@ -275,7 +275,7 @@ public enum BuiltInCrawlApps {
             .init(id: "preferred_source", label: "Preferred source", kind: .choice, help: "Source used by refresh.", defaultValue: "private-api", choices: ["private-api", "desktop-cache"], envVar: "GRAINCRAWL_SOURCE", configKey: "granola.preferred_source"),
             .init(id: "allow_private_api", label: "Allow private API", kind: .boolean, defaultValue: "true", envVar: "GRAINCRAWL_ALLOW_PRIVATE_API", configKey: "granola.allow_private_api"),
             .init(id: "allow_desktop_cache", label: "Allow desktop cache", kind: .boolean, defaultValue: "true", configKey: "granola.allow_desktop_cache"),
-            .init(id: "sync_limit", label: "Sync limit", kind: .string, help: "Maximum notes to import per sync run.", defaultValue: "100", configKey: "sync.default_limit"),
+            .init(id: "sync_limit", label: "Sync limit", kind: .number, help: "Maximum notes to import per sync run.", defaultValue: "100", configKey: "sync.default_limit"),
         ],
         configSections: [
             .init(id: "granola", title: "Granola", optionIDs: ["granola_profile", "preferred_source", "allow_private_api", "allow_desktop_cache"]),

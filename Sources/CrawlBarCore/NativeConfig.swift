@@ -203,6 +203,9 @@ public struct CrawlNativeConfigStore: @unchecked Sendable {
         if kind == .boolean {
             return ["1", "true", "yes", "on"].contains(value.lowercased()) ? "true" : "false"
         }
+        if kind == .number {
+            return value.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank ?? "0"
+        }
         return "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
     }
 
