@@ -241,7 +241,7 @@ public enum BuiltInCrawlApps {
 
     public static let graincrawl = CrawlAppManifest(
         id: Self.graincrawlID,
-        displayName: "Granola Archive",
+        displayName: "Granola",
         description: "Local-first archive for Granola notes, transcripts, summaries, and panels",
         binary: .init(name: "graincrawl"),
         branding: .init(

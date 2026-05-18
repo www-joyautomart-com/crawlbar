@@ -103,13 +103,13 @@ enum CrawlBarIconFactory {
                 return Self.sizedImage(image, size: size)
             }
         }
-        if let image = Self.bundledIcon(for: appID) {
-            return Self.sizedImage(image, size: size)
-        }
         if let bundleIdentifier = manifest?.branding.bundleIdentifier?.nilIfBlank,
            let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
         {
             return Self.sizedImage(NSWorkspace.shared.icon(forFile: appURL.path), size: size)
+        }
+        if let image = Self.bundledIcon(for: appID) {
+            return Self.sizedImage(image, size: size)
         }
         return nil
     }

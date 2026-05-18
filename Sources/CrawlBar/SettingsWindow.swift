@@ -173,12 +173,6 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
         }
     }
 
-    func moveUp(_ id: CrawlAppID) {
-        guard let index = self.apps.firstIndex(where: { $0.id == id }), index > 0 else { return }
-        self.apps.swapAt(index, index - 1)
-        self.save()
-    }
-
     func configValueDidChange(appID: CrawlAppID, option: CrawlAppManifest.ConfigOption, value: String?) {
         if option.kind == .secret {
             if value?.nilIfBlank == nil {
@@ -188,12 +182,6 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
             }
         }
         self.saveDebounced()
-    }
-
-    func moveDown(_ id: CrawlAppID) {
-        guard let index = self.apps.firstIndex(where: { $0.id == id }), index < self.apps.count - 1 else { return }
-        self.apps.swapAt(index, index + 1)
-        self.save()
     }
 
     func refreshAll() {
@@ -526,15 +514,6 @@ struct CrawlBarSettingsView: View {
                 .controlSize(.small)
                 .help("Refresh status")
                 .accessibilityLabel("Refresh crawler status")
-                Button {
-                    NSWorkspace.shared.open(CrawlActionLogStore.defaultDirectory())
-                } label: {
-                    Image(systemName: "folder")
-                }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-                .help("Open logs")
-                .accessibilityLabel("Open logs folder")
             }
             .padding(.horizontal, 4)
 
@@ -554,6 +533,7 @@ struct CrawlBarSettingsView: View {
                                 .padding(.horizontal, 8)
                             }
                             .buttonStyle(CrawlBarSidebarSelectionStyle(isSelected: self.selectedMode == .crawlers && self.model.selectedAppID == app.id))
+                            .help(CrawlBarCrawlerTitle.text(for: app.id, manifest: self.model.installations[app.id]?.manifest))
                             .accessibilityLabel(CrawlBarCrawlerTitle.text(for: app.id, manifest: self.model.installations[app.id]?.manifest))
                         }
                     }
@@ -612,8 +592,6 @@ struct CrawlBarSettingsView: View {
                     isRefreshing: self.model.isRefreshing,
                     runningAction: self.model.runningActions[selectedID],
                     actionMessage: self.model.actionMessages[selectedID],
-                    moveUp: { self.model.moveUp(selectedID) },
-                    moveDown: { self.model.moveDown(selectedID) },
                     refreshStatus: { self.model.refreshAll() },
                     runAction: { action in self.model.runAction(action, appID: selectedID) },
                     installApp: { self.model.installApp(selectedID) },
@@ -674,6 +652,7 @@ private struct CrawlBarSidebarButton: View {
         }
         .buttonStyle(CrawlBarSidebarSelectionStyle(isSelected: self.isSelected))
         .opacity(self.isDimmed ? 0.58 : 1)
+        .help(self.title)
         .accessibilityLabel(self.title)
     }
 }
@@ -718,6 +697,7 @@ private struct CrawlBarGeneralSettingsView: View {
                         Label("Refresh All", systemImage: "arrow.clockwise")
                     }
                     .disabled(self.model.isRefreshing)
+                    .help("Refresh all crawler statuses")
                 }
 
                 CrawlBarPanel(title: "App") {
@@ -728,16 +708,19 @@ private struct CrawlBarGeneralSettingsView: View {
                             Label("Install CLI", systemImage: "terminal")
                         }
                         .disabled(self.model.isInstallingCLI)
+                        .help("Install crawlbar into ~/.local/bin")
                         Button {
                             self.model.openConfigFile()
                         } label: {
                             Label("Open Config", systemImage: "doc.text")
                         }
+                        .help("Open CrawlBar config")
                         Button {
                             self.model.openLogsFolder()
                         } label: {
                             Label("Open Logs", systemImage: "folder")
                         }
+                        .help("Open action logs")
                     }
                     .controlSize(.small)
                     CrawlBarFact(label: "CLI install path", value: "~/.local/bin/crawlbar")
@@ -761,6 +744,7 @@ private struct CrawlBarGeneralSettingsView: View {
                         }
                         .labelsHidden()
                         .frame(width: 180)
+                        .help("Default schedule")
                         .onChange(of: self.model.refreshFrequency) {
                             self.model.save()
                         }
@@ -854,7 +838,11 @@ struct CrawlBarSidebarRow: View {
         if self.manifest?.availability == .comingSoon { return .disabled }
         if !self.app.enabled { return .disabled }
         if self.binaryPath == nil { return .needsConfig }
-        return self.status?.state ?? .unknown
+        let state = self.status?.state ?? .unknown
+        if self.app.id == BuiltInCrawlApps.graincrawlID, state == .error {
+            return .stale
+        }
+        return state
     }
 
     private var subtitle: String {
@@ -897,6 +885,8 @@ struct CrawlBarSidebarRow: View {
         switch self.rowState {
         case .needsConfig, .needsAuth, .error:
             .red
+        case .stale where self.app.id == BuiltInCrawlApps.graincrawlID && self.status?.state == .error:
+            .yellow
         default:
             .secondary
         }
@@ -934,8 +924,6 @@ struct CrawlBarAppDetailView: View {
     let isRefreshing: Bool
     let runningAction: String?
     let actionMessage: String?
-    let moveUp: () -> Void
-    let moveDown: () -> Void
     let refreshStatus: () -> Void
     let runAction: (String) -> Void
     let installApp: () -> Void
@@ -964,6 +952,7 @@ struct CrawlBarAppDetailView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                .help("Select crawler section")
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         self.selectedContent
@@ -1009,18 +998,6 @@ struct CrawlBarAppDetailView: View {
                     .help("Refresh status")
                     .accessibilityLabel("Refresh status")
                 }
-                Button(action: self.moveUp) {
-                    Image(systemName: "chevron.up")
-                }
-                .buttonStyle(.borderless)
-                .help("Move up")
-                .accessibilityLabel("Move crawler up")
-                Button(action: self.moveDown) {
-                    Image(systemName: "chevron.down")
-                }
-                .buttonStyle(.borderless)
-                .help("Move down")
-                .accessibilityLabel("Move crawler down")
             }
             .controlSize(.small)
         }
@@ -1075,7 +1052,6 @@ struct CrawlBarAppDetailView: View {
                 self.statusSummary
                 self.sourceSummary
                 self.latestRunSummary
-                self.metricsPreview
             }
         }
     }
@@ -1095,7 +1071,7 @@ struct CrawlBarAppDetailView: View {
                 }
             }
             if let issue = self.primaryIssue {
-                CrawlBarIssueBanner(message: issue)
+                CrawlBarIssueBanner(message: issue, state: self.issueState)
             }
         }
     }
@@ -1119,12 +1095,12 @@ struct CrawlBarAppDetailView: View {
         CrawlBarPanel(title: "Latest Run") {
             if let latestResult {
                 HStack(spacing: 8) {
-                    CrawlBarStatusDot(state: latestResult.succeeded ? .current : .error)
+                    CrawlBarStatusDot(state: latestResult.succeeded ? .current : self.issueState)
                     Text(Self.actionTitle(latestResult.action))
                         .font(.callout.weight(.medium))
                     Text(latestResult.succeeded ? "finished" : "failed")
                         .font(.callout)
-                        .foregroundStyle(latestResult.succeeded ? Color.secondary : Color.red)
+                        .foregroundStyle(latestResult.succeeded ? Color.secondary : self.issueColor)
                     Spacer(minLength: 8)
                     Text(CrawlBarDateText.relative(latestResult.finishedAt))
                         .font(.caption)
@@ -1135,35 +1111,13 @@ struct CrawlBarAppDetailView: View {
                 if let output = Self.resultMessage(latestResult) {
                     Text(output)
                         .font(.caption)
-                        .foregroundStyle(latestResult.succeeded ? Color.secondary : Color.red)
+                        .foregroundStyle(latestResult.succeeded ? Color.secondary : self.issueColor)
                         .lineLimit(3)
                         .truncationMode(.tail)
                         .textSelection(.enabled)
                 }
             } else {
                 Text("No action logs yet")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var metricsPreview: some View {
-        if !self.overviewCounts.isEmpty {
-            CrawlBarPanel(title: "Data") {
-                ForEach(self.overviewCounts.prefix(4)) { count in
-                    CrawlBarMetricRow(label: count.label, value: "\(count.value)")
-                }
-                if self.overviewCounts.count > 4 {
-                    Text("+\(self.overviewCounts.count - 4) more in Data")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } else {
-            CrawlBarPanel(title: "Data") {
-                Text("No counts reported")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -1258,6 +1212,7 @@ struct CrawlBarAppDetailView: View {
                         caption: "Allow CrawlBar to run actions and show live status.")
                 }
                     .onChange(of: self.app.enabled) { self.save() }
+                    .help("Enable crawler")
                 Toggle(isOn: self.$app.showInMenuBar) {
                     CrawlBarOptionLabel(
                         title: "Show in menu bar",
@@ -1265,6 +1220,7 @@ struct CrawlBarAppDetailView: View {
                 }
                     .disabled(!self.app.enabled)
                     .onChange(of: self.app.showInMenuBar) { self.save() }
+                    .help("Show in menu bar")
                 Toggle(isOn: self.$app.autoRefreshEnabled) {
                     CrawlBarOptionLabel(
                         title: "Run on schedule",
@@ -1272,12 +1228,14 @@ struct CrawlBarAppDetailView: View {
                 }
                     .disabled(!self.app.enabled)
                     .onChange(of: self.app.autoRefreshEnabled) { self.save() }
+                    .help("Run on schedule")
                 Toggle(isOn: self.usesGlobalRefreshBinding) {
                     CrawlBarOptionLabel(
                         title: "Use default schedule",
                         caption: "Follow the global interval from General settings.")
                 }
                     .disabled(!self.app.enabled || !self.app.autoRefreshEnabled)
+                    .help("Use default schedule")
             }
             CrawlBarControlRow(
                 title: "Custom schedule",
@@ -1290,6 +1248,7 @@ struct CrawlBarAppDetailView: View {
                 }
                 .labelsHidden()
                 .frame(width: 180)
+                .help("Custom schedule")
             }
             .disabled(!self.app.enabled || !self.app.autoRefreshEnabled || self.app.refreshFrequency == nil)
             Text("Default schedule: \(CrawlBarFrequencyLabel.text(for: self.globalRefreshFrequency))")
@@ -1302,6 +1261,7 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Install", systemImage: "square.and.arrow.down")
                     }
+                    .help("Install \(self.manifest?.binary.name ?? self.app.id.rawValue)")
                 }
                 if self.commandAvailable(self.app.preferredRefreshAction ?? "refresh") {
                     Button {
@@ -1309,6 +1269,7 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
                     }
+                    .help("Run the configured sync source")
                 }
                 if self.commandAvailable("desktop-cache-import") {
                     Button {
@@ -1316,6 +1277,7 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Import Desktop", systemImage: "externaldrive.connected.to.line.below")
                     }
+                    .help("Import from the local desktop cache")
                 }
                 if self.commandAvailable("doctor") {
                     Button {
@@ -1323,6 +1285,7 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Run Doctor", systemImage: "stethoscope")
                     }
+                    .help("Inspect crawler setup")
                 }
                 if self.commandAvailable("unlock") {
                     Button {
@@ -1330,6 +1293,7 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Unlock", systemImage: "key")
                     }
+                    .help("Show explicit unlock state")
                 }
                 if self.nativeAppAvailable {
                     Button {
@@ -1337,6 +1301,7 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Open Source App", systemImage: "app")
                     }
+                    .help("Open the native source app")
                 }
                 if self.commandAvailable(self.app.preferredUpdateAction ?? "update") {
                     Button {
@@ -1344,6 +1309,7 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Update", systemImage: "square.and.arrow.down")
                     }
+                    .help("Update the crawler")
                 }
             }
             .disabled(self.runningAction != nil)
@@ -1371,6 +1337,7 @@ struct CrawlBarAppDetailView: View {
                     caption: "Keep a local Git export for this crawler's shareable data.")
             }
                 .onChange(of: self.app.shareEnabled) { self.save() }
+                .help("Manage snapshot")
             Toggle(isOn: self.$app.shareAfterRefresh) {
                 CrawlBarOptionLabel(
                     title: "Publish after sync",
@@ -1378,6 +1345,7 @@ struct CrawlBarAppDetailView: View {
             }
                 .disabled(!self.app.shareEnabled)
                 .onChange(of: self.app.shareAfterRefresh) { self.save() }
+                .help("Publish after sync")
             HStack(spacing: 8) {
                 if self.commandAvailable(self.app.preferredShareAction ?? "publish") {
                     Button {
@@ -1385,6 +1353,7 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Publish Snapshot", systemImage: "arrow.up.circle")
                     }
+                    .help("Publish the local snapshot")
                 }
                 if self.commandAvailable(self.app.preferredUpdateAction ?? "update") {
                     Button {
@@ -1392,6 +1361,7 @@ struct CrawlBarAppDetailView: View {
                     } label: {
                         Label("Pull Updates", systemImage: "arrow.down.circle")
                     }
+                    .help("Pull snapshot updates")
                 }
             }
             .disabled(!self.app.shareEnabled || self.runningAction != nil)
@@ -1467,6 +1437,14 @@ struct CrawlBarAppDetailView: View {
         }
         guard let latestResult, !latestResult.succeeded else { return nil }
         return Self.resultMessage(latestResult) ?? "\(Self.actionTitle(latestResult.action)) failed with exit \(latestResult.exitCode)"
+    }
+
+    private var issueState: CrawlAppState {
+        self.app.id == BuiltInCrawlApps.graincrawlID ? .stale : .error
+    }
+
+    private var issueColor: Color {
+        self.issueState == .stale ? .yellow : .red
     }
 
     private var refreshSourceSummary: String {
@@ -1550,7 +1528,11 @@ struct CrawlBarAppDetailView: View {
         if self.isComingSoon { return .disabled }
         if !self.app.enabled { return .disabled }
         if self.installation?.binaryPath == nil { return .needsConfig }
-        return self.status?.state ?? .unknown
+        let state = self.status?.state ?? .unknown
+        if self.app.id == BuiltInCrawlApps.graincrawlID, state == .error {
+            return .stale
+        }
+        return state
     }
 
     private var statusFallback: String {
@@ -1843,6 +1825,7 @@ struct CrawlBarStatusPill: View {
         .padding(.vertical, 4)
         .background(Color(nsColor: .quaternaryLabelColor).opacity(0.12))
         .clipShape(Capsule())
+        .help(CrawlBarStatusLabel.text(for: self.state))
     }
 }
 
@@ -1866,22 +1849,27 @@ struct CrawlBarFact: View {
 
 struct CrawlBarIssueBanner: View {
     let message: String
+    let state: CrawlAppState
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.caption)
-                .foregroundStyle(.red)
+                .foregroundStyle(self.color)
             Text(self.message)
                 .font(.caption)
-                .foregroundStyle(.red)
+                .foregroundStyle(self.color)
                 .lineLimit(3)
                 .textSelection(.enabled)
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.red.opacity(0.08))
+        .background(self.color.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private var color: Color {
+        self.state == .stale ? .yellow : .red
     }
 }
 
@@ -2036,56 +2024,63 @@ struct CrawlBarConfigOptionField: View {
     @Binding var value: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            if self.option.kind != .boolean {
-                Text(self.option.label)
-                    .font(.callout)
-            }
-            switch self.option.kind {
-            case .secret:
+        CrawlBarControlRow(title: self.option.label, caption: self.caption) {
+            self.control
+        }
+        .help(self.option.help?.nilIfBlank ?? self.option.label)
+    }
+
+    @ViewBuilder
+    private var control: some View {
+        switch self.option.kind {
+        case .secret:
+            HStack(spacing: 8) {
                 SecureField(self.option.placeholder ?? "Value", text: self.$value)
                     .textFieldStyle(.roundedBorder)
+                    .frame(width: 300)
+                    .help(self.option.placeholder ?? self.option.label)
                 Button {
                     self.value = ""
                 } label: {
-                    Label("Clear Saved Secret", systemImage: "key.slash")
+                    Image(systemName: "key.slash")
                 }
-                .buttonStyle(.link)
-            case .boolean:
-                Toggle(self.option.label, isOn: self.booleanBinding)
-            case .choice:
-                Picker("Value", selection: self.$value) {
-                    ForEach(self.choices, id: \.self) { choice in
-                        Text(choice).tag(choice)
-                    }
-                }
+                .buttonStyle(.borderless)
+                .help("Clear saved secret")
+                .accessibilityLabel("Clear saved secret")
+            }
+        case .boolean:
+            Toggle("", isOn: self.booleanBinding)
                 .labelsHidden()
-                .frame(width: 260)
-            case .string:
-                TextField(self.option.placeholder ?? "Value", text: self.$value)
-                    .textFieldStyle(.roundedBorder)
-            }
-            if let help = self.option.help?.nilIfBlank {
-                Text(help)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack(spacing: 8) {
-                if let envVar = self.option.envVar?.nilIfBlank {
-                    Text(envVar)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .textSelection(.enabled)
-                }
-                if let configKey = self.option.configKey?.nilIfBlank {
-                    Text(configKey)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .textSelection(.enabled)
+                .help(self.option.label)
+        case .choice:
+            Picker("Value", selection: self.$value) {
+                ForEach(self.choices, id: \.self) { choice in
+                    Text(choice).tag(choice)
                 }
             }
+            .labelsHidden()
+            .frame(width: 220)
+            .help(self.option.help?.nilIfBlank ?? self.option.label)
+        case .string:
+            TextField(self.option.placeholder ?? "Value", text: self.$value)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 300)
+                .help(self.option.placeholder ?? self.option.label)
         }
+    }
+
+    private var caption: String? {
+        [
+            self.option.help?.nilIfBlank,
+            self.metadata,
+        ].compactMap { $0 }.joined(separator: "\n").nilIfBlank
+    }
+
+    private var metadata: String? {
+        [
+            self.option.envVar?.nilIfBlank,
+            self.option.configKey?.nilIfBlank,
+        ].compactMap { $0 }.joined(separator: "   ").nilIfBlank
     }
 
     private var choices: [String] {
