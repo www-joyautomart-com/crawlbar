@@ -73,76 +73,13 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func appMenuItem(for installation: CrawlAppInstallation) -> NSMenuItem {
-        let config = self.model.appConfig(for: installation.id)
         let status = self.model.statuses[installation.id]
         let state = self.effectiveState(for: installation, status: status)
         let title = CrawlBarCrawlerTitle.text(for: installation.id, manifest: installation.manifest)
-        let item = NSMenuItem(title: "\(title)  \(self.shortStateLabel(for: state))", action: nil, keyEquivalent: "")
-        item.image = CrawlBarIconFactory.image(for: installation.id, manifest: installation.manifest, size: 18)
-        item.toolTip = status?.summary ?? installation.manifest.description
-
-        let submenu = NSMenu(title: title)
-        submenu.autoenablesItems = false
-        submenu.addItem(self.disabledItem(self.longStateLabel(for: state)))
-        submenu.addItem(self.disabledItem(self.menuSummary(status?.summary ?? installation.manifest.description)))
-        if let lastSyncAt = status?.lastSyncAt {
-            submenu.addItem(self.disabledItem("Last sync: \(CrawlBarDateText.relative(lastSyncAt))"))
-        }
-        if let databaseCount = status?.databases.count, databaseCount > 0 {
-            let noun = databaseCount == 1 ? "database" : "databases"
-            submenu.addItem(self.disabledItem("Databases: \(databaseCount) \(noun)"))
-        }
-        submenu.addItem(.separator())
-
-        if installation.enabled, installation.binaryPath != nil {
-            let refreshAction = config?.preferredRefreshAction ?? "refresh"
-            if self.commandAvailable(refreshAction, installation: installation) {
-                submenu.addItem(self.actionItem("Sync Now", appID: installation.id, action: refreshAction))
-            }
-            if self.commandAvailable("doctor", installation: installation) {
-                submenu.addItem(self.actionItem("Doctor", appID: installation.id, action: "doctor"))
-            }
-            if self.commandAvailable("unlock", installation: installation) {
-                submenu.addItem(self.actionItem("Unlock", appID: installation.id, action: "unlock"))
-            }
-            if config?.shareEnabled == true {
-                submenu.addItem(.separator())
-                let publishAction = config?.preferredShareAction ?? "publish"
-                let updateAction = config?.preferredUpdateAction ?? "update"
-                if self.commandAvailable(publishAction, installation: installation) {
-                    submenu.addItem(self.actionItem("Publish Snapshot", appID: installation.id, action: publishAction))
-                }
-                if self.commandAvailable(updateAction, installation: installation) {
-                    submenu.addItem(self.actionItem("Pull Updates", appID: installation.id, action: updateAction))
-                }
-            }
-        } else {
-            let setupText = installation.manifest.availability == .comingSoon
-                ? "Coming soon"
-                : (installation.enabled ? "Missing command-line tool" : "Disabled in CrawlBar")
-            submenu.addItem(self.disabledItem(setupText))
-        }
-
-        submenu.addItem(.separator())
-        submenu.addItem(NSMenuItem(title: "Open Settings...", action: #selector(Self.showSettings(_:)), keyEquivalent: "", target: self))
-        item.submenu = submenu
-        return item
-    }
-
-    private func commandAvailable(_ action: String, installation: CrawlAppInstallation) -> Bool {
-        installation.manifest.commands[action] != nil
-    }
-
-    private func actionItem(_ title: String, appID: CrawlAppID, action: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: #selector(Self.runAction(_:)), keyEquivalent: "")
+        let item = NSMenuItem(title: title, action: #selector(Self.showSettingsForApp(_:)), keyEquivalent: "")
         item.target = self
-        item.representedObject = CrawlMenuCommand(appID: appID, action: action)
-        return item
-    }
-
-    private func disabledItem(_ title: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
+        item.representedObject = installation.id
+        item.image = CrawlBarIconFactory.statusDotImage(for: state)
         return item
     }
 
@@ -155,55 +92,6 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
             return .stale
         }
         return state
-    }
-
-    private func shortStateLabel(for state: CrawlAppState) -> String {
-        switch state {
-        case .current:
-            "Current"
-        case .stale:
-            "Stale"
-        case .syncing:
-            "Syncing"
-        case .needsConfig:
-            "Setup"
-        case .needsAuth:
-            "Auth"
-        case .error:
-            "Error"
-        case .disabled:
-            "Off"
-        case .unknown:
-            "Unknown"
-        }
-    }
-
-    private func longStateLabel(for state: CrawlAppState) -> String {
-        switch state {
-        case .current:
-            "Status: current"
-        case .stale:
-            "Status: stale"
-        case .syncing:
-            "Status: syncing"
-        case .needsConfig:
-            "Status: needs setup"
-        case .needsAuth:
-            "Status: needs auth"
-        case .error:
-            "Status: error"
-        case .disabled:
-            "Status: disabled"
-        case .unknown:
-            "Status: unknown"
-        }
-    }
-
-    private func menuSummary(_ summary: String) -> String {
-        if summary.count <= 58 {
-            return summary
-        }
-        return String(summary.prefix(55)) + "..."
     }
 
     private func scheduleRefreshTimer() {
@@ -246,7 +134,7 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatusButtonImage() {
         let rotation = self.model.isRefreshing ? CGFloat(self.refreshAnimationFrame) * 45 : 0
         self.statusItem?.button?.image = CrawlBarIconFactory.menuBarImage(rotationDegrees: rotation)
-        self.statusItem?.button?.toolTip = self.model.isRefreshing ? "CrawlBar is refreshing crawler status" : "CrawlBar"
+        self.statusItem?.button?.toolTip = nil
     }
 
     @objc private func refreshAll(_ sender: Any?) {
@@ -256,18 +144,20 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
         self.reloadMenu()
     }
 
-    @objc private func runAction(_ sender: NSMenuItem) {
-        guard let command = sender.representedObject as? CrawlMenuCommand else { return }
-        self.model.run(command: command) { [weak self] in
-            self?.reloadMenu()
-        }
-        self.reloadMenu()
-    }
-
     @objc private func showSettings(_ sender: Any?) {
         CrawlBarLog.app.debug("Opening settings")
         self.showInApplicationSwitcher()
         self.settingsWindowController.show()
+        self.model.reloadInstallations()
+        self.scheduleRefreshTimer()
+        self.reloadMenu()
+    }
+
+    @objc private func showSettingsForApp(_ sender: NSMenuItem) {
+        let appID = sender.representedObject as? CrawlAppID
+        CrawlBarLog.app.debug("Opening settings from status menu")
+        self.showInApplicationSwitcher()
+        self.settingsWindowController.show(appID: appID)
         self.model.reloadInstallations()
         self.scheduleRefreshTimer()
         self.reloadMenu()
@@ -300,16 +190,6 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate {
         self.model.reloadInstallations()
         self.scheduleRefreshTimer()
         self.reloadMenu()
-    }
-}
-
-final class CrawlMenuCommand: NSObject {
-    let appID: CrawlAppID
-    let action: String
-
-    init(appID: CrawlAppID, action: String) {
-        self.appID = appID
-        self.action = action
     }
 }
 
@@ -409,54 +289,6 @@ final class CrawlBarMenuModel: NSObject {
                 guard self.refreshGeneration == generation else { return }
                 self.isRefreshing = false
                 self.refreshTask = nil
-                onComplete()
-            }
-        }
-    }
-
-    func run(command: CrawlMenuCommand, onComplete: @escaping @MainActor () -> Void) {
-        self.isRefreshing = true
-        let appID = command.appID
-        let action = command.action
-        let registry = self.registry
-        let runner = self.runner
-        let statusService = self.statusService
-        let logStore = self.logStore
-        Task.detached {
-            let installation = try? registry.installation(for: appID, includeSecrets: true)
-            var actionError: CrawlAppStatus?
-            if let installation {
-                do {
-                    CrawlBarLog.actions.notice("Running \(action, privacy: .public) for \(appID.rawValue, privacy: .public)")
-                    let result = try runner.run(installation: installation, action: action, timeoutSeconds: 600)
-                    _ = try? logStore.save(result)
-                    if !result.succeeded {
-                        CrawlBarLog.actions.error(
-                            "\(action, privacy: .public) for \(appID.rawValue, privacy: .public) failed with exit \(result.exitCode)")
-                        actionError = Self.actionFailureStatus(result)
-                    }
-                } catch {
-                    CrawlBarLog.actions.error(
-                        "\(action, privacy: .public) for \(appID.rawValue, privacy: .public) threw: \(error.localizedDescription, privacy: .public)")
-                    actionError = Self.actionFailureStatus(appID: appID, action: action, message: error.localizedDescription)
-                }
-            }
-            let refreshed = installation.map { statusService.status(for: $0, timeoutSeconds: 5) }
-            await MainActor.run {
-                var changedStatuses: [CrawlAppID: CrawlAppStatus] = [:]
-                if let actionError {
-                    let status = Self.actionFailureStatus(
-                        actionError,
-                        refreshedStatus: refreshed,
-                        currentStatus: self.statuses[actionError.appID])
-                    self.statuses[actionError.appID] = status
-                    changedStatuses[actionError.appID] = status
-                } else if let refreshed {
-                    self.statuses[refreshed.appID] = refreshed
-                    changedStatuses[refreshed.appID] = refreshed
-                }
-                CrawlBarStateBroadcast.statusesDidChange(changedStatuses)
-                self.isRefreshing = false
                 onComplete()
             }
         }

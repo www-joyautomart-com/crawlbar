@@ -8,17 +8,23 @@ final class CrawlBarSettingsWindowController: NSObject, NSWindowDelegate {
     private var model: CrawlBarSettingsModel?
     var onClose: (() -> Void)?
 
-    func show() {
+    func show(appID: CrawlAppID? = nil) {
         if let window {
             window.makeKeyAndOrderFront(nil)
             NSApplication.shared.activate()
             if let model = (window.contentView as? NSHostingView<CrawlBarSettingsView>)?.rootView.model {
+                if let appID {
+                    model.selectedAppID = appID
+                }
                 model.refreshAll()
             }
             return
         }
 
         let model = CrawlBarSettingsModel()
+        if let appID {
+            model.selectedAppID = appID
+        }
         self.model = model
         let window = NSWindow(
             contentRect: NSRect(
@@ -109,7 +115,8 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
             let loadedInstallations = try self.registry.installations(includeDisabled: true)
             let manifests = Dictionary(uniqueKeysWithValues: loadedInstallations.map { ($0.id, $0.manifest) })
             let appConfigsByID = Dictionary(uniqueKeysWithValues: config.apps.map { ($0.id, $0) })
-            self.apps = loadedInstallations.map { installation in
+            let installationsByID = Dictionary(uniqueKeysWithValues: loadedInstallations.map { ($0.id, $0) })
+            let apps = loadedInstallations.map { installation in
                 let appConfig = appConfigsByID[installation.id] ?? CrawlBarAppConfig(
                     id: installation.id,
                     enabled: installation.manifest.availability == .available,
@@ -122,9 +129,10 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
                     includeSecrets: false)
                 return copy
             }
+            self.apps = Self.sortedAppConfigs(apps, installationsByID: installationsByID)
             self.refreshFrequency = config.refreshFrequency
             self.manifestDirectories = config.manifestDirectories
-            self.installations = Dictionary(uniqueKeysWithValues: loadedInstallations.map { ($0.id, $0) })
+            self.installations = installationsByID
             if self.selectedAppID == nil || !self.apps.contains(where: { $0.id == self.selectedAppID }) {
                 self.selectedAppID = self.apps.first?.id
             }
@@ -196,7 +204,9 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
             let installations = (try? registry.installationsForStatus(includeDisabled: true)) ?? []
             await MainActor.run {
                 guard self.refreshGeneration == generation else { return }
-                self.installations = Dictionary(uniqueKeysWithValues: installations.map { ($0.id, $0) })
+                let installationsByID = Dictionary(uniqueKeysWithValues: installations.map { ($0.id, $0) })
+                self.installations = installationsByID
+                self.apps = Self.sortedAppConfigs(self.apps, installationsByID: installationsByID)
             }
             await withTaskGroup(of: CrawlAppStatus.self) { group in
                 for installation in installations {
@@ -307,7 +317,9 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
             }
             let installations = (try? registry.installations(includeDisabled: true)) ?? []
             await MainActor.run {
-                self.installations = Dictionary(uniqueKeysWithValues: installations.map { ($0.id, $0) })
+                let installationsByID = Dictionary(uniqueKeysWithValues: installations.map { ($0.id, $0) })
+                self.installations = installationsByID
+                self.apps = Self.sortedAppConfigs(self.apps, installationsByID: installationsByID)
                 self.runningActions[appID] = nil
                 self.actionMessages[appID] = message
             }
@@ -383,6 +395,28 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
         default:
             action
         }
+    }
+
+    nonisolated private static func sortedAppConfigs(
+        _ apps: [CrawlBarAppConfig],
+        installationsByID: [CrawlAppID: CrawlAppInstallation])
+        -> [CrawlBarAppConfig]
+    {
+        let originalIndex = Dictionary(uniqueKeysWithValues: apps.enumerated().map { ($0.element.id, $0.offset) })
+        return apps.sorted { lhs, rhs in
+            let lhsRank = Self.sidebarRank(installation: installationsByID[lhs.id])
+            let rhsRank = Self.sidebarRank(installation: installationsByID[rhs.id])
+            if lhsRank != rhsRank { return lhsRank < rhsRank }
+            return (originalIndex[lhs.id] ?? Int.max) < (originalIndex[rhs.id] ?? Int.max)
+        }
+    }
+
+    nonisolated private static func sidebarRank(installation: CrawlAppInstallation?) -> Int {
+        guard let installation else { return 4 }
+        if installation.manifest.availability == .comingSoon { return 3 }
+        if installation.binaryPath != nil { return 0 }
+        if installation.manifest.install != nil { return 1 }
+        return 2
     }
 
     nonisolated private static func actionFailureStatus(_ result: CrawlCommandResult) -> CrawlAppStatus {
@@ -939,6 +973,10 @@ struct CrawlBarAppDetailView: View {
                 self.comingSoonContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.top, 6)
+            } else if self.isMissingBinary {
+                self.notInstalledContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.top, 6)
             } else {
                 Picker("Section", selection: self.$selectedTab) {
                     ForEach(CrawlBarDetailTab.allCases) { tab in
@@ -1027,6 +1065,45 @@ struct CrawlBarAppDetailView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 320)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+
+    private var notInstalledContent: some View {
+        VStack(spacing: 12) {
+            Spacer(minLength: 44)
+            CrawlBarBrandIcon(manifest: self.manifest, appID: self.app.id)
+                .frame(width: 72, height: 72)
+            Text("\(CrawlBarCrawlerTitle.text(for: self.app.id, manifest: self.manifest)) is not installed")
+                .font(.title3.weight(.semibold))
+                .multilineTextAlignment(.center)
+            Text("Install \(self.manifest?.binary.name ?? self.app.id.rawValue) to enable sync, search, and status checks.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+            if self.manifest?.install != nil {
+                Button {
+                    self.installApp()
+                } label: {
+                    Label("Install", systemImage: "square.and.arrow.down")
+                }
+                .disabled(self.runningAction != nil)
+            }
+            if self.runningAction == "install" {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Installing...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if let actionMessage {
+                Text(actionMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -1398,7 +1475,8 @@ struct CrawlBarAppDetailView: View {
                     ForEach(section.options) { option in
                         CrawlBarConfigOptionField(
                             option: option,
-                            value: self.configValueBinding(for: option))
+                            value: self.configValueBinding(for: option),
+                            disabledReason: self.configDisabledReason(for: option))
                     }
                 }
             }
@@ -1416,14 +1494,23 @@ struct CrawlBarAppDetailView: View {
     }
 
     private var primaryIssue: String? {
-        if let error = self.status?.errors.first?.nilIfBlank {
+        if let error = self.status?.errors.first?.nilIfBlank,
+           !self.issueDuplicatesStatusSummary(error)
+        {
             return error
         }
-        if let warning = self.status?.warnings.first?.nilIfBlank {
+        if let warning = self.status?.warnings.first?.nilIfBlank,
+           !self.issueDuplicatesStatusSummary(warning)
+        {
             return warning
         }
         guard let latestResult, !latestResult.succeeded else { return nil }
         return latestResult.userFacingRunMessage ?? "\(Self.actionTitle(latestResult.action)) failed with exit \(latestResult.exitCode)"
+    }
+
+    private func issueDuplicatesStatusSummary(_ issue: String) -> Bool {
+        guard let summary = self.status?.summary.nilIfBlank else { return false }
+        return summary.localizedCaseInsensitiveContains(issue)
     }
 
     private var issueState: CrawlAppState {
@@ -1641,6 +1728,22 @@ struct CrawlBarAppDetailView: View {
         self.manifest?.availability == .comingSoon
     }
 
+    private var isMissingBinary: Bool {
+        self.manifest?.availability == .available && self.installation?.binaryPath == nil
+    }
+
+    private var isRemoteGitcrawlStore: Bool {
+        guard self.app.id == BuiltInCrawlApps.gitcrawlID else { return false }
+        var paths = self.status?.databases.compactMap(\.path) ?? []
+        if let databasePath = self.status?.databasePath {
+            paths.append(databasePath)
+        }
+        return paths.contains { path in
+            let lowercased = path.lowercased()
+            return lowercased.contains("/stores/") && lowercased.contains("remote")
+        }
+    }
+
     private var usesGlobalRefreshBinding: Binding<Bool> {
         Binding(
             get: { self.app.refreshFrequency == nil },
@@ -1693,6 +1796,17 @@ struct CrawlBarAppDetailView: View {
                 self.app.configValues[option.id] = value
                 self.configValueChanged(option, value)
             })
+    }
+
+    private func configDisabledReason(for option: CrawlAppManifest.ConfigOption) -> String? {
+        guard self.isRemoteGitcrawlStore else { return nil }
+        let optionText = [
+            option.id,
+            option.configKey,
+            option.envVar,
+        ].compactMap { $0?.lowercased() }.joined(separator: " ")
+        guard optionText.contains("openai") || optionText.contains("embedding") else { return nil }
+        return "Disabled while Git Crawl is using a remote store."
     }
 
     private func configSections(for manifest: CrawlAppManifest) -> [CrawlBarConfigSection] {
@@ -2021,11 +2135,13 @@ struct CrawlBarDatabaseRow: View {
 struct CrawlBarConfigOptionField: View {
     let option: CrawlAppManifest.ConfigOption
     @Binding var value: String
+    var disabledReason: String?
 
     var body: some View {
         CrawlBarControlRow(title: self.option.label, caption: self.caption) {
             self.control
         }
+        .disabled(self.disabledReason != nil)
     }
 
     @ViewBuilder
@@ -2064,6 +2180,7 @@ struct CrawlBarConfigOptionField: View {
 
     private var caption: String? {
         [
+            self.disabledReason?.nilIfBlank,
             self.option.help?.nilIfBlank,
             self.metadata,
         ].compactMap { $0 }.joined(separator: "\n").nilIfBlank

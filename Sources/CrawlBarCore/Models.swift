@@ -735,7 +735,7 @@ public extension CrawlAppStatus {
             appID: appID,
             state: normalized.state,
             summary: summary,
-            errors: [fullMessage])
+            errors: [normalized.summary])
     }
 
     static func richestMetadataStatus(_ preferred: CrawlAppStatus?, fallback: CrawlAppStatus?) -> CrawlAppStatus? {
@@ -891,7 +891,11 @@ public extension CrawlCommandResult {
         if self.succeeded {
             return Self.firstLine(in: self.stderr)
         }
-        return Self.firstLine(in: self.stderr) ?? Self.firstLine(in: self.stdout)
+        return CrawlAppStatus.commandFailure(
+            appID: self.appID,
+            message: self.stderr.nilIfBlank ?? self.stdout.nilIfBlank,
+            fallback: "\(self.action) failed with exit \(self.exitCode)")
+            .summary
     }
 
     var shouldShowExitCode: Bool {

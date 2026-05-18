@@ -400,7 +400,7 @@ enum CrawlBarSelfTest {
         let githubAuthStatus = CrawlStatusMapper().status(from: githubAuthResult, manifest: BuiltInCrawlApps.gitcrawl)
         try Self.expect(githubAuthStatus.state == .needsAuth, "gitcrawl 401 maps to auth state")
         try Self.expect(githubAuthStatus.summary == "GitHub credentials rejected", "gitcrawl 401 uses useful summary")
-        try Self.expect(githubAuthStatus.errors.first?.contains("[github] request GET /repos/openclaw/openclaw") == true, "gitcrawl 401 preserves full stderr")
+        try Self.expect(githubAuthStatus.errors == ["GitHub credentials rejected"], "gitcrawl 401 keeps request trace out of status errors")
 
         let githubServerMessage = """
         [github] request GET /repos/openclaw/openclaw
@@ -749,14 +749,29 @@ enum CrawlBarSelfTest {
             finishedAt: Date(timeIntervalSince1970: 1_775_000_005))
         try Self.expect(warningResult.userFacingRunMessage == "Used cached Granola data", "successful stderr can still surface a warning")
 
+        let failedGitHubResult = CrawlCommandResult(
+            appID: BuiltInCrawlApps.gitcrawlID,
+            action: "refresh",
+            exitCode: 1,
+            stdout: "",
+            stderr: """
+            [github] request GET /repos/openclaw/openclaw
+            github GET /repos/openclaw/openclaw failed with status 401: {
+              "message": "Bad credentials"
+            }
+            """,
+            startedAt: Date(timeIntervalSince1970: 1_775_000_006),
+            finishedAt: Date(timeIntervalSince1970: 1_775_000_007))
+        try Self.expect(failedGitHubResult.userFacingRunMessage == "GitHub credentials rejected", "failed gitcrawl run message is normalized")
+
         let failedStdoutResult = CrawlCommandResult(
             appID: BuiltInCrawlApps.graincrawlID,
             action: "refresh",
             exitCode: 1,
             stdout: "Granola refresh failed",
             stderr: "",
-            startedAt: Date(timeIntervalSince1970: 1_775_000_006),
-            finishedAt: Date(timeIntervalSince1970: 1_775_000_007))
+            startedAt: Date(timeIntervalSince1970: 1_775_000_008),
+            finishedAt: Date(timeIntervalSince1970: 1_775_000_009))
         try Self.expect(failedStdoutResult.userFacingRunMessage == "Granola refresh failed", "failed stdout is shown as a run message")
         try Self.expect(failedStdoutResult.shouldShowExitCode, "failed runs show exit code")
     }

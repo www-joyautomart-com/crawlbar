@@ -96,6 +96,34 @@ enum CrawlBarIconFactory {
         return image
     }
 
+    static func statusDotImage(for state: CrawlAppState, size: CGFloat = 12) -> NSImage {
+        let image = NSImage(size: NSSize(width: size, height: size))
+        image.lockFocus()
+        let rect = NSRect(x: 2, y: 2, width: size - 4, height: size - 4)
+        let dot = NSBezierPath(ovalIn: rect)
+        Self.statusColor(for: state).setFill()
+        dot.fill()
+        NSColor.separatorColor.withAlphaComponent(0.5).setStroke()
+        dot.lineWidth = 0.75
+        dot.stroke()
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
+    }
+
+    private static func statusColor(for state: CrawlAppState) -> NSColor {
+        switch state {
+        case .current:
+            NSColor.systemGreen
+        case .stale, .syncing, .unknown:
+            NSColor.systemYellow
+        case .needsConfig, .needsAuth, .error:
+            NSColor.systemRed
+        case .disabled:
+            NSColor.systemGray
+        }
+    }
+
     private static func brandedImage(for appID: CrawlAppID, manifest: CrawlAppManifest?, size: CGFloat) -> NSImage? {
         if let iconPath = manifest?.branding.iconPath?.nilIfBlank {
             let expandedPath = NSString(string: iconPath).expandingTildeInPath

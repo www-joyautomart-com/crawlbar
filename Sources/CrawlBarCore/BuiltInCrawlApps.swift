@@ -59,7 +59,8 @@ public enum BuiltInCrawlApps {
         configSections: [
             .init(id: "github", title: "GitHub Access", optionIDs: ["github_token"]),
             .init(id: "ai", title: "Embeddings", optionIDs: ["openai_api_key", "embedding_model"]),
-        ])
+        ],
+        install: .init(method: .homebrew, package: "vincentkoc/tap/gitcrawl"))
 
     public static let slacrawl = CrawlAppManifest(
         id: Self.slacrawlID,
@@ -138,7 +139,8 @@ public enum BuiltInCrawlApps {
         configSections: [
             .init(id: "discord", title: "Discord Access", optionIDs: ["discord_token"]),
             .init(id: "ai", title: "Embeddings", optionIDs: ["openai_api_key", "embedding_model"]),
-        ])
+        ],
+        install: .init(method: .homebrew, package: "vincentkoc/tap/discrawl"))
 
     public static let notcrawl = CrawlAppManifest(
         id: Self.notcrawlID,
