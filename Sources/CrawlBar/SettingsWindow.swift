@@ -75,6 +75,7 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
     private var pendingSaveTask: Task<Void, Never>?
     private var refreshGeneration = UUID()
     private var manifestDirectories: [String] = ["~/.crawlbar/apps"]
+    private var clearedNativeSecretIDsByAppID: [CrawlAppID: Set<String>] = [:]
     private let store = CrawlBarConfigStore()
     private let registry = CrawlAppRegistry()
     private let runner: CrawlCommandRunner
@@ -156,7 +157,10 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
                 manifestDirectories: self.manifestDirectories,
                 apps: self.apps)
             try self.store.save(config)
-            try self.nativeConfigStore.write(config: config)
+            try self.nativeConfigStore.write(
+                config: config,
+                clearMissingSecretIDsByAppID: self.clearedNativeSecretIDsByAppID)
+            self.clearedNativeSecretIDsByAppID = [:]
             self.lastError = nil
             CrawlBarStateBroadcast.configDidChange()
         } catch {
@@ -169,6 +173,17 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
         guard let index = self.apps.firstIndex(where: { $0.id == id }), index > 0 else { return }
         self.apps.swapAt(index, index - 1)
         self.save()
+    }
+
+    func configValueDidChange(appID: CrawlAppID, option: CrawlAppManifest.ConfigOption, value: String?) {
+        if option.kind == .secret {
+            if value?.nilIfBlank == nil {
+                self.clearedNativeSecretIDsByAppID[appID, default: []].insert(option.id)
+            } else {
+                self.clearedNativeSecretIDsByAppID[appID]?.remove(option.id)
+            }
+        }
+        self.saveDebounced()
     }
 
     func moveDown(_ id: CrawlAppID) {
@@ -585,6 +600,7 @@ struct CrawlBarSettingsView: View {
                     installApp: { self.model.installApp(selectedID) },
                     backupDatabases: { self.model.backupDatabases(selectedID) },
                     openDataFolder: { self.model.openDataFolder(selectedID) },
+                    configValueChanged: { option, value in self.model.configValueDidChange(appID: selectedID, option: option, value: value) },
                     save: { self.model.save() },
                     saveDebounced: { self.model.saveDebounced() })
             } else {
@@ -905,6 +921,7 @@ struct CrawlBarAppDetailView: View {
     let installApp: () -> Void
     let backupDatabases: () -> Void
     let openDataFolder: () -> Void
+    let configValueChanged: (CrawlAppManifest.ConfigOption, String?) -> Void
     let save: () -> Void
     let saveDebounced: () -> Void
 
@@ -1465,8 +1482,9 @@ struct CrawlBarAppDetailView: View {
         Binding(
             get: { self.app.configValues[option.id] ?? option.defaultValue ?? "" },
             set: {
-                self.app.configValues[option.id] = $0.nilIfBlank
-                self.saveDebounced()
+                let value = $0.nilIfBlank
+                self.app.configValues[option.id] = value
+                self.configValueChanged(option, value)
             })
     }
 

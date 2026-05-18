@@ -37,13 +37,20 @@ public struct CrawlNativeConfigStore: @unchecked Sendable {
             clearMissingSecretIDs: clearMissingSecretIDs)
     }
 
-    public func write(config: CrawlBarConfig) throws {
+    public func write(
+        config: CrawlBarConfig,
+        clearMissingSecretIDsByAppID: [CrawlAppID: Set<String>] = [:])
+        throws
+    {
         let manifests = Dictionary(uniqueKeysWithValues: CrawlManifestCatalog(fileManager: self.fileManager)
             .manifests(config: config)
             .map { ($0.id, $0) })
         for appConfig in config.apps {
             guard let manifest = manifests[appConfig.id] else { continue }
-            try self.write(appConfig: appConfig, manifest: manifest)
+            try self.write(
+                appConfig: appConfig,
+                manifest: manifest,
+                clearMissingSecretIDs: clearMissingSecretIDsByAppID[appConfig.id] ?? [])
         }
     }
 

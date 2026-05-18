@@ -219,11 +219,11 @@ enum CrawlBarCLI {
             installations = [installation]
         } else {
             installations = try registry.availableInstallations(includeSecrets: false)
-                .filter(Self.supportsAllAppQuery)
+                .filter { Self.queryAction(for: $0, allApps: true) != nil }
         }
 
         let results = installations.map { installation -> CrawlCommandResult in
-            guard let action = Self.queryAction(for: installation) else {
+            guard let action = Self.queryAction(for: installation, allApps: isAllApps) else {
                 return CrawlCommandResult(
                     appID: installation.id,
                     action: "query",
@@ -269,15 +269,11 @@ enum CrawlBarCLI {
         }
     }
 
-    private static func queryAction(for installation: CrawlAppInstallation) -> String? {
-        ["query", "sql", "search"].first { installation.manifest.commands[$0] != nil }
-    }
-
-    private static func supportsAllAppQuery(_ installation: CrawlAppInstallation) -> Bool {
-        guard let action = Self.queryAction(for: installation),
-              let arguments = installation.manifest.commands[action]
-        else { return false }
-        return action == "search" || arguments.contains("search")
+    private static func queryAction(for installation: CrawlAppInstallation, allApps: Bool = false) -> String? {
+        if allApps, installation.manifest.commands["search"] != nil {
+            return "search"
+        }
+        return ["query", "sql", "search"].first { installation.manifest.commands[$0] != nil }
     }
 
     private static func backup(
