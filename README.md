@@ -1,6 +1,6 @@
-![CrawlBar banner](docs/assets/readme-banner.jpg)
-
 # CrawlBar
+
+![CrawlBar banner](docs/assets/readme-banner.jpg)
 
 CrawlBar is a macOS menu bar control plane for local-first `*crawl` apps.
 
