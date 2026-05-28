@@ -186,12 +186,22 @@ enum CrawlBarIconFactory {
 
     private static func bundledIconName(for appID: CrawlAppID) -> String? {
         switch appID.rawValue {
+        case "gitcrawl":
+            "gitcrawl"
+        case "slacrawl":
+            "slacrawl"
+        case "discrawl":
+            "discrawl"
+        case "notcrawl":
+            "notcrawl"
         case "gogcli":
             "google"
+        case "wacli":
+            "wacli"
         case "birdclaw":
             "x"
         case "graincrawl":
-            "granola"
+            "graincrawl"
         default:
             nil
         }
