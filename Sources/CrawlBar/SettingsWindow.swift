@@ -36,7 +36,7 @@ final class CrawlBarSettingsWindowController: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false)
         window.title = "CrawlBar"
-        window.toolbarStyle = .unified
+        window.toolbarStyle = .expanded
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.center()
@@ -522,16 +522,17 @@ struct CrawlBarSettingsView: View {
     @State private var selectedMode: CrawlBarSettingsMode = .crawlers
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            self.sidebar
-            self.detail
-                .frame(
-                    maxWidth: .infinity,
-                    maxHeight: .infinity,
-                    alignment: .topLeading)
+        TabView(selection: self.$selectedMode) {
+            self.crawlersTab
+                .tabItem { Label("Crawlers", systemImage: "tray.full") }
+                .tag(CrawlBarSettingsMode.crawlers)
+            CrawlBarGeneralSettingsView(model: self.model)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+                .tabItem { Label("General", systemImage: "gearshape") }
+                .tag(CrawlBarSettingsMode.general)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
+        .tabViewStyle(.automatic)
         .frame(
             minWidth: CrawlBarSettingsLayout.minWindowWidth,
             maxWidth: .infinity,
@@ -540,7 +541,20 @@ struct CrawlBarSettingsView: View {
             alignment: .top)
     }
 
-    private var sidebar: some View {
+    private var crawlersTab: some View {
+        HStack(alignment: .top, spacing: 16) {
+            self.crawlerSidebar
+            self.detail
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .topLeading)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+    }
+
+    private var crawlerSidebar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text("Crawlers")
@@ -551,10 +565,11 @@ struct CrawlBarSettingsView: View {
                 Button {
                     self.model.refreshAll()
                 } label: {
-                    Image(systemName: "arrow.clockwise")
+                    Image(systemName: self.model.isRefreshing ? "hourglass" : "arrow.clockwise")
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
+                .disabled(self.model.isRefreshing)
                 .accessibilityLabel("Refresh crawler status")
             }
             .padding(.horizontal, 4)
@@ -564,7 +579,6 @@ struct CrawlBarSettingsView: View {
                     VStack(spacing: 0) {
                         ForEach(self.model.apps) { app in
                             Button {
-                                self.selectedMode = .crawlers
                                 self.model.selectedAppID = app.id
                             } label: {
                                 CrawlBarSidebarRow(
@@ -574,27 +588,12 @@ struct CrawlBarSettingsView: View {
                                     binaryPath: self.model.installations[app.id]?.binaryPath)
                                 .padding(.horizontal, 8)
                             }
-                            .buttonStyle(CrawlBarSidebarSelectionStyle(isSelected: self.selectedMode == .crawlers && self.model.selectedAppID == app.id))
+                            .buttonStyle(CrawlBarSidebarSelectionStyle(isSelected: self.model.selectedAppID == app.id))
                             .accessibilityLabel(CrawlBarCrawlerTitle.text(for: app.id, manifest: self.model.installations[app.id]?.manifest))
                         }
                     }
                     .padding(.vertical, 4)
                 }
-
-                Divider()
-                    .padding(.leading, 8)
-
-                CrawlBarSidebarButton(
-                    title: "General",
-                    subtitle: "App settings",
-                    systemImage: "gearshape",
-                    isSelected: self.selectedMode == .general,
-                    isDimmed: false)
-                {
-                    self.selectedMode = .general
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
             }
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -659,6 +658,7 @@ struct CrawlBarSettingsView: View {
                 self.model.apps[index] = $0
             })
     }
+
 }
 
 private struct CrawlBarSidebarButton: View {

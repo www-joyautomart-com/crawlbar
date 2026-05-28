@@ -4,6 +4,7 @@
 
 ### Changes
 
+- Redesign the menu bar UI with RepoBar-style native rich menu rows, branded crawler icons, status summaries, and tabbed settings.
 - Add CrawlBar support for Cloudflare remote crawler archives, including built-in `remote status`, `remote archives`, and compressed SQLite `cloud publish` actions for `gitcrawl` and `discrawl`.
 - Surface Cloudflare D1/R2 archive status, remote archive metadata, and gzip chunked SQLite bundle details in normalized status JSON and the settings UI.
 - Bundle real macOS app icons for GitHub Desktop, Slack, Discord, Notion, WhatsApp, and Granola crawler rows.
