@@ -388,6 +388,12 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
             "Unlock"
         case "publish":
             "Publish"
+        case "cloud-publish":
+            "Cloud Publish"
+        case "remote-status":
+            "Remote Status"
+        case "remote-archives":
+            "Remote Archives"
         case "update":
             "Update"
         case "desktop-cache-import":
@@ -1047,6 +1053,7 @@ struct CrawlBarAppDetailView: View {
             self.metrics
         case .sync:
             self.syncSettings
+            self.cloudArchiveSettings
             self.gitShareSettings
         case .settings:
             self.configuration
@@ -1202,13 +1209,28 @@ struct CrawlBarAppDetailView: View {
     @ViewBuilder
     private var remoteStore: some View {
         if let remoteStore = self.remoteStoreSummary {
-            CrawlBarPanel(title: "Remote Store") {
+            CrawlBarPanel(title: remoteStore.title) {
                 CrawlBarFact(label: "Remote", value: remoteStore.remote)
+                if let archive = remoteStore.archive {
+                    CrawlBarFact(label: "Archive", value: archive)
+                }
                 if let repoPath = remoteStore.repoPath {
                     CrawlBarFact(label: "Checkout", value: repoPath)
                 }
                 if let branch = remoteStore.branch {
                     CrawlBarFact(label: "Branch", value: branch)
+                }
+                if let bundle = remoteStore.bundle {
+                    CrawlBarFact(label: "Bundle", value: bundle)
+                }
+                if let compressed = remoteStore.compressed {
+                    CrawlBarFact(label: "Compressed", value: compressed)
+                }
+                if let parts = remoteStore.parts {
+                    CrawlBarFact(label: "Parts", value: parts)
+                }
+                if let lastIngest = remoteStore.lastIngest {
+                    CrawlBarFact(label: "Ingest", value: lastIngest)
                 }
                 if let databasePath = self.status?.databasePath {
                     CrawlBarFact(label: "Local index", value: URL(fileURLWithPath: databasePath).lastPathComponent)
@@ -1457,6 +1479,53 @@ struct CrawlBarAppDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private var cloudArchiveSettings: some View {
+        if self.commandAvailable("cloud-publish") || self.commandAvailable("remote-status") || self.commandAvailable("remote-archives") {
+            CrawlBarPanel(title: "Cloudflare Archive") {
+                CrawlBarOptionLabel(
+                    title: "Remote SQLite archive",
+                    caption: "Publish a compressed SQLite bundle and use the configured Worker archive for live reads.")
+                HStack(spacing: 8) {
+                    if self.commandAvailable("cloud-publish") {
+                        Button {
+                            self.runAction("cloud-publish")
+                        } label: {
+                            Label("Publish Cloud", systemImage: "icloud.and.arrow.up")
+                        }
+                    }
+                    if self.commandAvailable("remote-status") {
+                        Button {
+                            self.runAction("remote-status")
+                        } label: {
+                            Label("Remote Status", systemImage: "antenna.radiowaves.left.and.right")
+                        }
+                    }
+                    if self.commandAvailable("remote-archives") {
+                        Button {
+                            self.runAction("remote-archives")
+                        } label: {
+                            Label("Archives", systemImage: "tray.full")
+                        }
+                    }
+                }
+                .disabled(self.runningAction != nil)
+                if let remote = self.status?.remote {
+                    Divider()
+                    if let endpoint = remote.endpoint?.nilIfBlank {
+                        CrawlBarFact(label: "Endpoint", value: endpoint)
+                    }
+                    if let archive = remote.archive?.nilIfBlank {
+                        CrawlBarFact(label: "Archive", value: archive)
+                    }
+                    if let sqliteBundle = self.status?.sqliteBundle {
+                        CrawlBarFact(label: "Bundle", value: self.bundleSummary(sqliteBundle))
+                    }
+                }
+            }
+        }
+    }
+
     private var paths: some View {
         CrawlBarPanel(title: "Paths") {
             CrawlBarControlRow(
@@ -1627,6 +1696,12 @@ struct CrawlBarAppDetailView: View {
             "Unlock"
         case "publish":
             "Publish"
+        case "cloud-publish":
+            "Cloud Publish"
+        case "remote-status":
+            "Remote Status"
+        case "remote-archives":
+            "Remote Archives"
         case "update":
             "Update"
         case "desktop-cache-import":
@@ -1663,7 +1738,7 @@ struct CrawlBarAppDetailView: View {
     private var databaseSummary: String {
         guard let status else { return "Unknown" }
         if let remoteStore = self.remoteStoreSummary {
-            return remoteStore.shortName
+            return remoteStore.databaseSummary
         }
         if self.app.id == BuiltInCrawlApps.gitcrawlID {
             return self.summaryText(label: "GitHub archives", bytes: self.totalDatabaseBytes)
@@ -1721,8 +1796,8 @@ struct CrawlBarAppDetailView: View {
     }
 
     private var overviewDataScope: String {
-        if self.usesRemoteStore {
-            return "Remote store"
+        if let remoteStore = self.remoteStoreSummary {
+            return remoteStore.dataScope
         }
         if self.primaryDatabase?.counts.isEmpty == false {
             return "Active database"
@@ -1754,6 +1829,15 @@ struct CrawlBarAppDetailView: View {
         ].compactMap { $0?.nilIfBlank }.joined(separator: " · ")
     }
 
+    private func bundleSummary(_ bundle: CrawlSQLiteBundleStatus) -> String {
+        [
+            bundle.format?.nilIfBlank,
+            bundle.compression?.nilIfBlank,
+            bundle.compressedBytes.map { ByteCountFormatter.crawlBarFileSize.string(fromByteCount: Int64($0)) },
+            bundle.partCount.map { "\($0) part\($0 == 1 ? "" : "s")" },
+        ].compactMap { $0 }.joined(separator: " · ")
+    }
+
     private var isComingSoon: Bool {
         self.manifest?.availability == .comingSoon
     }
@@ -1767,11 +1851,24 @@ struct CrawlBarAppDetailView: View {
     }
 
     private var remoteStoreSummary: CrawlBarRemoteStoreSummary? {
+        if let remote = self.status?.remote, remote.enabled {
+            let database = self.status?.databases.first(where: { $0.endpoint != nil || $0.archive != nil })
+            let endpoint = remote.endpoint?.nilIfBlank ?? database?.endpoint?.nilIfBlank ?? "Cloudflare remote"
+            let archive = remote.archive?.nilIfBlank ?? database?.archive?.nilIfBlank
+            return CrawlBarRemoteStoreSummary(
+                remote: endpoint,
+                archive: archive,
+                kind: .cloudflare,
+                sqliteBundle: self.status?.sqliteBundle,
+                sqliteObject: self.status?.sqliteObject,
+                lastIngestAt: remote.lastIngestAt ?? remote.lastSyncAt)
+        }
         if self.status?.share?.enabled == true, let remote = self.status?.share?.remote?.nilIfBlank {
             return CrawlBarRemoteStoreSummary(
                 remote: remote,
                 repoPath: self.status?.share?.repoPath?.nilIfBlank,
-                branch: self.status?.share?.branch?.nilIfBlank)
+                branch: self.status?.share?.branch?.nilIfBlank,
+                kind: .gitSnapshot)
         }
         guard self.app.id == BuiltInCrawlApps.gitcrawlID else { return nil }
         var paths = self.status?.databases.compactMap(\.path) ?? []
@@ -1785,7 +1882,8 @@ struct CrawlBarAppDetailView: View {
         return CrawlBarRemoteStoreSummary(
             remote: "https://github.com/openclaw/gitcrawl-store.git",
             repoPath: repoPath,
-            branch: nil)
+            branch: nil,
+            kind: .gitSnapshot)
     }
 
     private var usesGlobalRefreshBinding: Binding<Bool> {
@@ -2101,17 +2199,87 @@ struct CrawlBarMetricRow: View {
 }
 
 private struct CrawlBarRemoteStoreSummary {
+    enum Kind {
+        case gitSnapshot
+        case cloudflare
+    }
+
     var remote: String
-    var repoPath: String?
-    var branch: String?
+    var archive: String? = nil
+    var repoPath: String? = nil
+    var branch: String? = nil
+    var kind: Kind
+    var sqliteBundle: CrawlSQLiteBundleStatus? = nil
+    var sqliteObject: CrawlSQLiteObjectStatus? = nil
+    var lastIngestAt: Date? = nil
+
+    var title: String {
+        switch self.kind {
+        case .cloudflare:
+            "Cloudflare Archive"
+        case .gitSnapshot:
+            "Remote Store"
+        }
+    }
 
     var shortName: String {
+        if self.kind == .cloudflare {
+            return self.archive?.nilIfBlank ?? "Cloudflare archive"
+        }
         let trimmed = self.remote
             .replacingOccurrences(of: "https://github.com/", with: "")
             .replacingOccurrences(of: "git@github.com:", with: "")
             .replacingOccurrences(of: ".git", with: "")
             .nilIfBlank
         return trimmed ?? "Remote store"
+    }
+
+    var dataScope: String {
+        switch self.kind {
+        case .cloudflare:
+            "Cloudflare remote"
+        case .gitSnapshot:
+            "Remote store"
+        }
+    }
+
+    var databaseSummary: String {
+        guard self.kind == .cloudflare else { return self.shortName }
+        let pieces = [
+            self.shortName,
+            self.sqliteBundle?.compressedBytes.map { ByteCountFormatter.crawlBarFileSize.string(fromByteCount: Int64($0)) },
+            self.sqliteBundle?.compression?.nilIfBlank,
+        ].compactMap { $0 }
+        return pieces.isEmpty ? "Cloudflare archive" : pieces.joined(separator: " · ")
+    }
+
+    var bundle: String? {
+        guard let sqliteBundle else { return nil }
+        return [
+            sqliteBundle.format?.nilIfBlank,
+            sqliteBundle.compression?.nilIfBlank,
+        ].compactMap { $0 }.joined(separator: " · ").nilIfBlank
+    }
+
+    var compressed: String? {
+        let formatter = ByteCountFormatter.crawlBarFileSize
+        let values = [
+            sqliteBundle?.compressedBytes.map { formatter.string(fromByteCount: Int64($0)) },
+            sqliteBundle?.rawBytes.map { formatter.string(fromByteCount: Int64($0)) + " raw" },
+            sqliteObject?.bytes.map { formatter.string(fromByteCount: Int64($0)) + " object" },
+        ].compactMap { $0?.nilIfBlank }
+        return values.isEmpty ? nil : values.joined(separator: " / ")
+    }
+
+    var parts: String? {
+        sqliteBundle?.partCount.map { "\($0)" }
+    }
+
+    var lastIngest: String? {
+        guard let lastIngestAt else { return nil }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: lastIngestAt, relativeTo: Date())
     }
 }
 
@@ -2192,6 +2360,10 @@ struct CrawlBarDatabaseRow: View {
             "externaldrive.connected.to.line.below"
         case .logical:
             "square.stack.3d.up"
+        case .remote, .d1, .cloudflareD1:
+            "cloud"
+        case .sqliteBundle:
+            "archivebox"
         }
     }
 }

@@ -6,6 +6,8 @@ CrawlBar is a macOS menu bar control plane for local-first `*crawl` apps.
 
 It discovers crawler CLIs, reads metadata manifests, shows status/freshness/counts, runs refresh and doctor actions, writes redacted job logs, and keeps per-app config in `~/.crawlbar/config.json`.
 
+For `gitcrawl` and `discrawl`, CrawlBar also understands Cloudflare-backed remote archives: `remote status`, `remote archives`, and compressed SQLite `cloud publish` actions appear in the app when the installed CLI exposes them.
+
 ## Apps
 
 Built-in manifests ship for:
@@ -37,6 +39,8 @@ crawlbar query --app slacrawl -- 'select count(*) from messages;'
 crawlbar doctor --app discrawl [--json]
 crawlbar refresh --app slacrawl [--json]
 crawlbar action desktop-cache-import --app discrawl [--json]
+crawlbar action cloud-publish --app discrawl [--json]
+crawlbar action remote-status --app gitcrawl [--json]
 crawlbar logs [--json]
 crawlbar config path|validate|init
 ```

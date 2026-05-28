@@ -54,7 +54,10 @@ public struct CrawlStatusMapper: Sendable {
             self.count("repositories", "Repositories", ["repo_count", "repository_count", "repositories"]),
         ].compactMap { self.value($0, in: object) }
 
+        let remote = self.remoteStatus(in: object)
         let lastSyncAt = self.dateValue(["last_sync_at", "updated_at", "generated_at"], in: object)
+            ?? remote?.lastSyncAt
+            ?? remote?.lastIngestAt
         return CrawlAppStatus(
             appID: result.appID,
             state: self.state(lastSyncAt: lastSyncAt, fallback: .current, staleAfterSeconds: staleAfterSeconds),
@@ -63,7 +66,11 @@ public struct CrawlStatusMapper: Sendable {
             databasePath: self.stringValue(["db_path", "database_path", "database"], in: object),
             lastSyncAt: lastSyncAt,
             counts: counts,
-            freshness: self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds))
+            freshness: self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds),
+            share: self.shareStatus(in: object),
+            remote: remote,
+            sqliteObject: self.sqliteObjectStatus(in: object),
+            sqliteBundle: self.sqliteBundleStatus(in: object))
     }
 
     private func slacrawlStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
@@ -76,7 +83,10 @@ public struct CrawlStatusMapper: Sendable {
 
         let counts = self.statusCounts(in: object, fallback: flatCounts)
         let databases = self.databaseResources(in: object)
+        let remote = self.remoteStatus(in: object)
         let lastSyncAt = self.dateValue(["last_sync_at", "latest_message_at", "updated_at"], in: object)
+            ?? remote?.lastSyncAt
+            ?? remote?.lastIngestAt
             ?? self.databaseModifiedAt(databases)
         let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds)
         return CrawlAppStatus(
@@ -90,7 +100,10 @@ public struct CrawlStatusMapper: Sendable {
             counts: counts,
             databases: databases,
             freshness: freshness,
-            share: self.shareStatus(in: object))
+            share: self.shareStatus(in: object),
+            remote: remote,
+            sqliteObject: self.sqliteObjectStatus(in: object),
+            sqliteBundle: self.sqliteBundleStatus(in: object))
     }
 
     private func discrawlStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
@@ -105,7 +118,10 @@ public struct CrawlStatusMapper: Sendable {
 
         let counts = self.statusCounts(in: object, fallback: flatCounts)
         let databases = self.databaseResources(in: object)
+        let remote = self.remoteStatus(in: object)
         let lastSyncAt = self.dateValue(["last_sync_at", "latest_message_at", "updated_at"], in: object)
+            ?? remote?.lastSyncAt
+            ?? remote?.lastIngestAt
             ?? self.databaseModifiedAt(databases)
         let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds)
         return CrawlAppStatus(
@@ -119,7 +135,10 @@ public struct CrawlStatusMapper: Sendable {
             counts: counts,
             databases: databases,
             freshness: freshness,
-            share: self.shareStatus(in: object))
+            share: self.shareStatus(in: object),
+            remote: remote,
+            sqliteObject: self.sqliteObjectStatus(in: object),
+            sqliteBundle: self.sqliteBundleStatus(in: object))
     }
 
     private func notcrawlStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
@@ -134,7 +153,10 @@ public struct CrawlStatusMapper: Sendable {
             self.count("raw_records", "Raw Records", ["raw_record_count", "raw_records"]),
         ].compactMap { self.value($0, in: object) }
 
+        let remote = self.remoteStatus(in: object)
         let lastSyncAt = self.dateValue(["last_sync_at", "last_import_at", "updated_at"], in: object)
+            ?? remote?.lastSyncAt
+            ?? remote?.lastIngestAt
         return CrawlAppStatus(
             appID: result.appID,
             state: self.state(lastSyncAt: lastSyncAt, fallback: .current, staleAfterSeconds: staleAfterSeconds),
@@ -146,13 +168,19 @@ public struct CrawlStatusMapper: Sendable {
             lastSyncAt: lastSyncAt,
             counts: counts,
             freshness: self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds),
-            share: self.shareStatus(in: object))
+            share: self.shareStatus(in: object),
+            remote: remote,
+            sqliteObject: self.sqliteObjectStatus(in: object),
+            sqliteBundle: self.sqliteBundleStatus(in: object))
     }
 
     private func genericStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
         let counts = self.statusCounts(in: object, fallback: self.counts(in: object))
         let databases = self.databaseResources(in: object)
+        let remote = self.remoteStatus(in: object)
         let lastSyncAt = self.dateValue(["last_sync_at", "updated_at", "generated_at"], in: object)
+            ?? remote?.lastSyncAt
+            ?? remote?.lastIngestAt
             ?? self.databaseModifiedAt(databases)
         let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds)
         return CrawlAppStatus(
@@ -169,7 +197,10 @@ public struct CrawlStatusMapper: Sendable {
             counts: counts,
             databases: databases,
             freshness: freshness,
-            share: self.shareStatus(in: object))
+            share: self.shareStatus(in: object),
+            remote: remote,
+            sqliteObject: self.sqliteObjectStatus(in: object),
+            sqliteBundle: self.sqliteBundleStatus(in: object))
     }
 
     private func parseObject(_ text: String) -> [String: Any]? {
@@ -286,9 +317,11 @@ public struct CrawlStatusMapper: Sendable {
             return CrawlDatabaseResource(
                 id: id,
                 label: self.stringValue(["label"], in: item) ?? URL(fileURLWithPath: id).lastPathComponent,
-                kind: CrawlDatabaseKind(rawValue: kindValue) ?? .sqlite,
+                kind: CrawlDatabaseKind(rawValue: kindValue) ?? .remote,
                 role: self.stringValue(["role"], in: item),
                 path: path,
+                endpoint: self.stringValue(["endpoint"], in: item),
+                archive: self.stringValue(["archive"], in: item),
                 isPrimary: self.boolValue(["is_primary", "primary"], in: item) ?? false,
                 bytes: self.intValue(["bytes", "size_bytes"], in: item),
                 modifiedAt: self.dateValue(["modified_at", "updated_at"], in: item),
@@ -373,6 +406,54 @@ public struct CrawlStatusMapper: Sendable {
             remote: share["remote"] as? String,
             branch: share["branch"] as? String,
             needsUpdate: share["needs_update"] as? Bool)
+    }
+
+    private func remoteStatus(in object: [String: Any]) -> CrawlRemoteStatus? {
+        let remote = self.firstObject(["remote"], in: object) ?? object
+        let endpoint = self.stringValue(["endpoint"], in: remote)
+        let archive = self.stringValue(["archive"], in: remote)
+        let mode = self.stringValue(["mode"], in: remote)
+        guard endpoint != nil || archive != nil || mode != nil else { return nil }
+        return CrawlRemoteStatus(
+            enabled: self.boolValue(["enabled"], in: remote) ?? true,
+            mode: mode,
+            endpoint: endpoint,
+            archive: archive,
+            lastIngestAt: self.dateValue(["last_ingest_at"], in: remote),
+            lastSyncAt: self.dateValue(["last_sync_at"], in: remote),
+            needsUpdate: self.boolValue(["needs_update"], in: remote))
+    }
+
+    private func sqliteObjectStatus(in object: [String: Any]) -> CrawlSQLiteObjectStatus? {
+        guard let sqliteObject = self.firstObject(["sqlite_object"], in: object) else { return nil }
+        return CrawlSQLiteObjectStatus(
+            key: self.stringValue(["key"], in: sqliteObject),
+            contentType: self.stringValue(["content_type"], in: sqliteObject),
+            bytes: self.intValue(["bytes", "size"], in: sqliteObject),
+            uploadedAt: self.dateValue(["uploaded_at", "uploaded", "modified_at"], in: sqliteObject))
+    }
+
+    private func sqliteBundleStatus(in object: [String: Any]) -> CrawlSQLiteBundleStatus? {
+        guard let sqliteBundle = self.firstObject(["sqlite_bundle", "bundle"], in: object) else { return nil }
+        let manifest = self.firstObject(["manifest"], in: sqliteBundle) ?? sqliteBundle
+        let compression = self.firstObject(["compression"], in: manifest)
+        let rawObject = self.firstObject(["object"], in: manifest)
+        let compressedObject = self.firstObject(["compressed_object"], in: manifest)
+        let parts = self.firstValue("parts", in: manifest) as? [Any]
+        let compressedBytes = self.int(sqliteBundle["compressed_bytes"] as Any)
+            ?? self.int(sqliteBundle["size"] as Any)
+            ?? compressedObject.flatMap { self.intValue(["bytes", "size"], in: $0) }
+        return CrawlSQLiteBundleStatus(
+            key: self.stringValue(["key"], in: sqliteBundle),
+            contentType: self.stringValue(["content_type"], in: sqliteBundle),
+            format: self.stringValue(["format"], in: manifest),
+            compression: compression.flatMap { self.stringValue(["algorithm"], in: $0) },
+            rawBytes: self.int(sqliteBundle["raw_bytes"] as Any)
+                ?? rawObject.flatMap { self.intValue(["bytes", "size"], in: $0) },
+            compressedBytes: compressedBytes,
+            partCount: self.intValue(["part_count"], in: sqliteBundle) ?? parts?.count,
+            uploadedAt: self.dateValue(["uploaded_at", "uploaded", "modified_at"], in: sqliteBundle),
+            generatedAt: self.dateValue(["generated_at"], in: manifest))
     }
 
     private func firstObject(_ keys: [String], in object: [String: Any]) -> [String: Any]? {
