@@ -175,10 +175,18 @@ enum CrawlBarSelfTest {
         try Self.expect(BuiltInCrawlApps.graincrawl.branding.bundleIdentifier == "com.granola.app", "graincrawl uses native Granola icon")
         try Self.expect(BuiltInCrawlApps.gitcrawl.commands["status"] == ["status", "--json"], "gitcrawl uses fast status command")
         try Self.expect(BuiltInCrawlApps.gitcrawl.commands["refresh"] == ["sync", "--json"], "gitcrawl keeps refresh action wired")
+        try Self.expect(BuiltInCrawlApps.gitcrawl.commands["remote-status"] == ["remote", "status", "--json"], "gitcrawl exposes remote status")
+        try Self.expect(BuiltInCrawlApps.gitcrawl.commands["cloud-publish"] == ["cloud", "publish", "--json"], "gitcrawl exposes cloud publish")
+        try Self.expect(BuiltInCrawlApps.gitcrawl.capabilities.contains(.remoteArchive), "gitcrawl advertises remote archive")
+        try Self.expect(BuiltInCrawlApps.gitcrawl.capabilities.contains(.cloudPublish), "gitcrawl advertises cloud publish")
         try Self.expect(BuiltInCrawlApps.slacrawl.commands["query"] == ["sql"], "Slack exposes query action")
         try Self.expect(BuiltInCrawlApps.slacrawl.commands["search"] == ["--json", "search"], "Slack exposes text search action")
         try Self.expect(BuiltInCrawlApps.discrawl.commands["query"] == nil, "Discord does not advertise stale SQL action")
         try Self.expect(!BuiltInCrawlApps.discrawl.capabilities.contains(.search), "Discord search capability waits for upstream metadata")
+        try Self.expect(BuiltInCrawlApps.discrawl.commands["remote-status"] == ["remote", "status", "--json"], "Discord exposes remote status")
+        try Self.expect(BuiltInCrawlApps.discrawl.commands["cloud-publish"] == ["cloud", "publish", "--sqlite-only", "--json"], "Discord cloud publish defaults to sqlite-only")
+        try Self.expect(BuiltInCrawlApps.discrawl.capabilities.contains(.remoteArchive), "Discord advertises remote archive")
+        try Self.expect(BuiltInCrawlApps.discrawl.capabilities.contains(.cloudPublish), "Discord advertises cloud publish")
         try Self.expect(BuiltInCrawlApps.notcrawl.capabilities.contains(.desktopCache), "Notion advertises desktop cache capability")
         try Self.expect(BuiltInCrawlApps.gitcrawl.configSections.contains { $0.id == "github" }, "built-in config sections exist")
     }
@@ -352,6 +360,78 @@ enum CrawlBarSelfTest {
         try Self.expect(crawlKitStatus.databases.first?.id == "primary", "crawlkit databases map")
         try Self.expect(crawlKitStatus.databases.first?.modifiedAt != nil, "crawlkit database modified date maps")
         try Self.expect(crawlKitStatus.databases.first?.counts.contains(CrawlCount(id: "messages", label: "Messages", value: 5052)) == true, "crawlkit database counts map")
+
+        let cloudOutput = """
+        {
+          "schema_version": "crawlkit.control.v1",
+          "app_id": "discrawl",
+          "state": "current",
+          "summary": "1417329 messages in remote archive discrawl/openclaw",
+          "config_path": "/tmp/discrawl.toml",
+          "counts": [
+            {"id": "channels", "label": "Channels", "value": 23956},
+            {"id": "messages", "label": "Messages", "value": 1417329},
+            {"id": "members", "label": "Members", "value": 173089}
+          ],
+          "remote": {
+            "enabled": true,
+            "mode": "cloud",
+            "endpoint": "https://crawl.example.test",
+            "archive": "discrawl/openclaw",
+            "last_ingest_at": "2026-05-28T19:30:56.840Z"
+          },
+          "databases": [
+            {
+              "id": "remote",
+              "label": "Discord cloud archive",
+              "kind": "cloudflare-d1",
+              "role": "archive",
+              "endpoint": "https://crawl.example.test",
+              "archive": "discrawl/openclaw",
+              "is_primary": true,
+              "counts": [
+                {"id": "messages", "label": "Messages", "value": 1417329}
+              ]
+            }
+          ],
+          "sqlite_bundle": {
+            "key": "v1/discrawl/discrawl%2Fopenclaw/sqlite/current.manifest.json",
+            "content_type": "application/json",
+            "uploaded_at": "2026-05-28T19:30:56.840Z",
+            "manifest": {
+              "format": "sqlite-gzip-chunked-v1",
+              "generated_at": "2026-05-28T19:30:41Z",
+              "compression": {"algorithm": "gzip"},
+              "object": {"key": "v1/discrawl/discrawl%2Fopenclaw/sqlite/current.db", "size": 839589888, "sha256": "raw"},
+              "compressed_object": {"key": "v1/discrawl/discrawl%2Fopenclaw/sqlite/current.db.gz", "size": 259315038, "sha256": "compressed"},
+              "parts": [
+                {"index": 0, "key": "part-0", "size": 67108864, "sha256": "a"},
+                {"index": 1, "key": "part-1", "size": 67108864, "sha256": "b"},
+                {"index": 2, "key": "part-2", "size": 67108864, "sha256": "c"},
+                {"index": 3, "key": "part-3", "size": 57988446, "sha256": "d"}
+              ]
+            }
+          }
+        }
+        """
+        let cloudResult = CrawlCommandResult(
+            appID: BuiltInCrawlApps.discrawlID,
+            action: "status",
+            exitCode: 0,
+            stdout: cloudOutput,
+            stderr: "",
+            startedAt: Date(),
+            finishedAt: Date())
+        let cloudStatus = CrawlStatusMapper().status(from: cloudResult, manifest: BuiltInCrawlApps.discrawl)
+        try Self.expect(cloudStatus.remote?.archive == "discrawl/openclaw", "remote archive maps")
+        try Self.expect(cloudStatus.lastSyncAt != nil, "remote ingest maps as sync freshness")
+        try Self.expect(cloudStatus.databases.first?.kind == .cloudflareD1, "remote database kind maps")
+        try Self.expect(cloudStatus.databases.first?.endpoint == "https://crawl.example.test", "remote database endpoint maps")
+        try Self.expect(cloudStatus.sqliteBundle?.format == "sqlite-gzip-chunked-v1", "sqlite bundle format maps")
+        try Self.expect(cloudStatus.sqliteBundle?.compression == "gzip", "sqlite bundle compression maps")
+        try Self.expect(cloudStatus.sqliteBundle?.rawBytes == 839589888, "sqlite bundle raw size maps")
+        try Self.expect(cloudStatus.sqliteBundle?.compressedBytes == 259315038, "sqlite bundle compressed size maps")
+        try Self.expect(cloudStatus.sqliteBundle?.partCount == 4, "sqlite bundle part count maps")
 
         let okOutput = """
         {
