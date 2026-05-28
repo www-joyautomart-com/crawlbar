@@ -11,6 +11,8 @@ enum CrawlBarBrandPalette {
             NSColor(calibratedRed: 0.25, green: 0.16, blue: 0.32, alpha: 1)
         case "discrawl":
             NSColor(calibratedRed: 0.35, green: 0.40, blue: 0.95, alpha: 1)
+        case "telecrawl":
+            NSColor(calibratedRed: 0.13, green: 0.62, blue: 0.85, alpha: 1)
         case "notcrawl":
             NSColor(calibratedWhite: 0.08, alpha: 1)
         case "gogcli":
@@ -253,6 +255,10 @@ enum CrawlBarIconFactory {
             tile.lineWidth = max(1, rect.width * 0.035)
             tile.stroke()
             Self.drawGranolaGlyph(in: rect)
+        case "telecrawl":
+            NSColor(calibratedRed: 0.13, green: 0.62, blue: 0.85, alpha: 1).setFill()
+            tile.fill()
+            Self.drawTelegramGlyph(in: rect)
         default:
             let accent = CrawlBarBrandPalette.accent(for: appID, manifest: manifest)
             accent.withAlphaComponent(0.16).setFill()
@@ -271,6 +277,26 @@ enum CrawlBarIconFactory {
                 Self.drawTerminalGlyph(in: rect, color: accent)
             }
         }
+    }
+
+    private static func drawTelegramGlyph(in rect: NSRect) {
+        NSColor.white.setFill()
+        let plane = NSBezierPath()
+        plane.move(to: NSPoint(x: rect.minX + rect.width * 0.18, y: rect.midY + rect.height * 0.03))
+        plane.line(to: NSPoint(x: rect.maxX - rect.width * 0.16, y: rect.maxY - rect.height * 0.22))
+        plane.line(to: NSPoint(x: rect.maxX - rect.width * 0.32, y: rect.minY + rect.height * 0.20))
+        plane.line(to: NSPoint(x: rect.midX + rect.width * 0.02, y: rect.midY - rect.height * 0.04))
+        plane.line(to: NSPoint(x: rect.minX + rect.width * 0.35, y: rect.minY + rect.height * 0.31))
+        plane.close()
+        plane.fill()
+
+        NSColor(calibratedRed: 0.13, green: 0.62, blue: 0.85, alpha: 1).withAlphaComponent(0.9).setStroke()
+        let fold = NSBezierPath()
+        fold.lineWidth = max(1, rect.width * 0.035)
+        fold.lineCapStyle = .round
+        fold.move(to: NSPoint(x: rect.midX + rect.width * 0.02, y: rect.midY - rect.height * 0.04))
+        fold.line(to: NSPoint(x: rect.maxX - rect.width * 0.18, y: rect.maxY - rect.height * 0.22))
+        fold.stroke()
     }
 
     private static func drawGoogleGlyph(in rect: NSRect) {

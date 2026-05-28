@@ -15,6 +15,7 @@ Built-in manifests ship for:
 - `gitcrawl`
 - `slacrawl`
 - `discrawl`
+- `telecrawl`
 - `notcrawl`
 - `graincrawl`
 

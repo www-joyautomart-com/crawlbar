@@ -4,6 +4,7 @@ public enum BuiltInCrawlApps {
     public static let gitcrawlID = CrawlAppID(rawValue: "gitcrawl")
     public static let slacrawlID = CrawlAppID(rawValue: "slacrawl")
     public static let discrawlID = CrawlAppID(rawValue: "discrawl")
+    public static let telecrawlID = CrawlAppID(rawValue: "telecrawl")
     public static let notcrawlID = CrawlAppID(rawValue: "notcrawl")
     public static let gogcliID = CrawlAppID(rawValue: "gogcli")
     public static let wacliID = CrawlAppID(rawValue: "wacli")
@@ -14,6 +15,7 @@ public enum BuiltInCrawlApps {
         Self.gitcrawl,
         Self.slacrawl,
         Self.discrawl,
+        Self.telecrawl,
         Self.notcrawl,
         Self.gogcli,
         Self.wacli,
@@ -147,6 +149,35 @@ public enum BuiltInCrawlApps {
             .init(id: "ai", title: "Embeddings", optionIDs: ["openai_api_key", "embedding_model"]),
         ],
         install: .init(method: .homebrew, package: "vincentkoc/tap/discrawl"))
+
+    public static let telecrawl = CrawlAppManifest(
+        id: Self.telecrawlID,
+        displayName: "Telegram",
+        description: "Local-first Telegram Desktop archive crawler",
+        binary: .init(name: "telecrawl"),
+        branding: .init(
+            symbolName: "paperplane.fill",
+            accentColor: "#229ED9",
+            bundleIdentifier: "org.telegram.desktop"),
+        paths: .init(
+            defaultConfig: "~/.telecrawl/backup.json",
+            defaultDatabase: "~/.telecrawl/telecrawl.db",
+            defaultCache: "~/.telecrawl/cache",
+            defaultLogs: "~/.telecrawl/logs"),
+        commands: [
+            "metadata": ["metadata"],
+            "status": ["--json", "status"],
+            "doctor": ["--json", "doctor"],
+            "refresh": ["--json", "import"],
+            "search": ["--json", "search"],
+        ],
+        capabilities: [.status, .doctor, .refresh, .search],
+        statusRequiresSecrets: false,
+        privacy: .init(
+            containsPrivateMessages: true,
+            exportsSecrets: false,
+            localOnlyScopes: ["telegram-desktop", "sqlite", "encrypted-git-backup"]),
+        install: .init(method: .homebrew, package: "steipete/tap/telecrawl"))
 
     public static let notcrawl = CrawlAppManifest(
         id: Self.notcrawlID,

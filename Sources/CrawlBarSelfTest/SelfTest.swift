@@ -159,6 +159,13 @@ enum CrawlBarSelfTest {
         try Self.expect(BuiltInCrawlApps.notcrawl.privacy.localOnlyScopes.contains("workspace pages"), "Notion privacy metadata flags workspace pages")
         try Self.expect(BuiltInCrawlApps.slacrawl.install?.package == "vincentkoc/tap/slacrawl", "built-in install metadata exists")
         try Self.expect(BuiltInCrawlApps.gogcli.availability == .comingSoon, "coming soon manifests are marked unavailable")
+        try Self.expect(BuiltInCrawlApps.telecrawl.availability == .available, "telecrawl is available")
+        try Self.expect(BuiltInCrawlApps.telecrawl.commands["status"] == ["--json", "status"], "telecrawl uses JSON status command")
+        try Self.expect(BuiltInCrawlApps.telecrawl.commands["refresh"] == ["--json", "import"], "telecrawl imports through refresh")
+        try Self.expect(BuiltInCrawlApps.telecrawl.capabilities.contains(.search), "telecrawl advertises search")
+        try Self.expect(BuiltInCrawlApps.telecrawl.privacy.containsPrivateMessages, "telecrawl privacy metadata flags Telegram messages")
+        try Self.expect(BuiltInCrawlApps.telecrawl.install?.package == "steipete/tap/telecrawl", "telecrawl install metadata exists")
+        try Self.expect(BuiltInCrawlApps.telecrawl.paths.defaultConfig == "~/.telecrawl/backup.json", "telecrawl config path maps")
         try Self.expect(BuiltInCrawlApps.graincrawl.availability == .available, "graincrawl is available")
         try Self.expect(BuiltInCrawlApps.graincrawl.commands["status"] == ["status", "--json"], "graincrawl uses crawlkit status command")
         try Self.expect(
@@ -432,6 +439,37 @@ enum CrawlBarSelfTest {
         try Self.expect(cloudStatus.sqliteBundle?.rawBytes == 839589888, "sqlite bundle raw size maps")
         try Self.expect(cloudStatus.sqliteBundle?.compressedBytes == 259315038, "sqlite bundle compressed size maps")
         try Self.expect(cloudStatus.sqliteBundle?.partCount == 4, "sqlite bundle part count maps")
+
+        let telecrawlOutput = """
+        {
+          "db_path": "/tmp/telecrawl.db",
+          "chats": 3,
+          "messages": 42,
+          "unread_chats": 1,
+          "unread_messages": 5,
+          "media_messages": 6,
+          "folders": 2,
+          "topics": 4,
+          "last_import_at": "2026-05-01T12:00:00Z"
+        }
+        """
+        let telecrawlResult = CrawlCommandResult(
+            appID: BuiltInCrawlApps.telecrawlID,
+            action: "status",
+            exitCode: 0,
+            stdout: telecrawlOutput,
+            stderr: "",
+            startedAt: Date(),
+            finishedAt: Date())
+        let telecrawlStatus = CrawlStatusMapper().status(
+            from: telecrawlResult,
+            manifest: BuiltInCrawlApps.telecrawl,
+            staleAfterSeconds: 60)
+        try Self.expect(telecrawlStatus.counts.contains(CrawlCount(id: "messages", label: "Messages", value: 42)), "telecrawl messages map")
+        try Self.expect(telecrawlStatus.counts.contains(CrawlCount(id: "chats", label: "Chats", value: 3)), "telecrawl chats map")
+        try Self.expect(telecrawlStatus.lastSyncAt == telecrawlStatus.lastImportAt, "telecrawl import time maps to sync freshness")
+        try Self.expect(telecrawlStatus.state == .stale, "telecrawl import freshness drives stale state")
+        try Self.expect(telecrawlStatus.databases.first?.label == "Telegram archive", "telecrawl database inventory maps")
 
         let okOutput = """
         {

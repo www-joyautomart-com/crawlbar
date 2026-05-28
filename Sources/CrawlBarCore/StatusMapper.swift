@@ -37,6 +37,8 @@ public struct CrawlStatusMapper: Sendable {
                 status = self.slacrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             case BuiltInCrawlApps.discrawlID:
                 status = self.discrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
+            case BuiltInCrawlApps.telecrawlID:
+                status = self.telecrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             case BuiltInCrawlApps.notcrawlID:
                 status = self.notcrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             default:
@@ -139,6 +141,33 @@ public struct CrawlStatusMapper: Sendable {
             remote: remote,
             sqliteObject: self.sqliteObjectStatus(in: object),
             sqliteBundle: self.sqliteBundleStatus(in: object))
+    }
+
+    private func telecrawlStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
+        let counts = [
+            self.count("messages", "Messages", ["message_count", "messages"]),
+            self.count("chats", "Chats", ["chat_count", "chats"]),
+            self.count("folders", "Folders", ["folder_count", "folders"]),
+            self.count("topics", "Topics", ["topic_count", "topics"]),
+            self.count("unread_chats", "Unread Chats", ["unread_chat_count", "unread_chats"]),
+            self.count("unread_messages", "Unread Messages", ["unread_message_count", "unread_messages"]),
+            self.count("media_messages", "Media Messages", ["media_message_count", "media_messages"]),
+        ].compactMap { self.value($0, in: object) }
+
+        let lastSyncAt = self.dateValue(["last_sync_at", "last_import_at", "updated_at"], in: object)
+        let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds)
+        return CrawlAppStatus(
+            appID: result.appID,
+            state: self.statusState(in: object, lastSyncAt: lastSyncAt, freshness: freshness, fallback: .current, staleAfterSeconds: staleAfterSeconds),
+            summary: self.stringValue(["summary", "message"], in: object) ?? self.summary(from: counts, fallback: "Telegram crawl status is current"),
+            configPath: self.stringValue(["config_path", "config"], in: object),
+            databasePath: self.stringValue(["db_path", "database_path", "database"], in: object),
+            databaseBytes: self.intValue(["db_bytes", "database_bytes"], in: object),
+            lastSyncAt: lastSyncAt,
+            lastImportAt: self.dateValue(["last_import_at"], in: object),
+            counts: counts,
+            freshness: freshness,
+            share: self.shareStatus(in: object))
     }
 
     private func notcrawlStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
