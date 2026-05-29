@@ -39,9 +39,26 @@ enum CrawlBarCrawlerTitle {
     }
 }
 
+@MainActor
 enum CrawlBarIconFactory {
+    private static var imageCache: [String: NSImage] = [:]
+    private static var menuBarImageCache: [String: NSImage] = [:]
+    private static var statusDotImageCache: [String: NSImage] = [:]
+
     static func image(for appID: CrawlAppID, manifest: CrawlAppManifest?, size: CGFloat = 32) -> NSImage {
+        let cacheKey = [
+            "app",
+            appID.rawValue,
+            "\(Self.cacheSizeKey(for: size))",
+            manifest?.branding.iconPath?.nilIfBlank ?? "",
+            manifest?.branding.bundleIdentifier?.nilIfBlank ?? "",
+            manifest?.branding.accentColor.nilIfBlank ?? "",
+        ].joined(separator: "|")
+        if let cached = Self.imageCache[cacheKey] {
+            return cached
+        }
         if let image = Self.brandedImage(for: appID, manifest: manifest, size: size) {
+            Self.imageCache[cacheKey] = image
             return image
         }
         let image = NSImage(size: NSSize(width: size, height: size))
@@ -49,10 +66,15 @@ enum CrawlBarIconFactory {
         Self.drawTile(appID: appID, manifest: manifest, rect: NSRect(x: 0, y: 0, width: size, height: size))
         image.unlockFocus()
         image.isTemplate = false
+        Self.imageCache[cacheKey] = image
         return image
     }
 
     static func menuBarImage(size: CGFloat = 18, rotationDegrees: CGFloat = 0) -> NSImage {
+        let cacheKey = "\(Self.cacheSizeKey(for: size))|\(Int(rotationDegrees.rounded()))"
+        if let cached = Self.menuBarImageCache[cacheKey] {
+            return cached
+        }
         let image = NSImage(size: NSSize(width: size, height: size))
         image.lockFocus()
         if rotationDegrees != 0 {
@@ -95,10 +117,15 @@ enum CrawlBarIconFactory {
         }
         image.unlockFocus()
         image.isTemplate = true
+        Self.menuBarImageCache[cacheKey] = image
         return image
     }
 
     static func statusDotImage(for state: CrawlAppState, size: CGFloat = 12) -> NSImage {
+        let cacheKey = "\(state.rawValue)|\(Self.cacheSizeKey(for: size))"
+        if let cached = Self.statusDotImageCache[cacheKey] {
+            return cached
+        }
         let image = NSImage(size: NSSize(width: size, height: size))
         image.lockFocus()
         let rect = NSRect(x: 2, y: 2, width: size - 4, height: size - 4)
@@ -110,7 +137,12 @@ enum CrawlBarIconFactory {
         dot.stroke()
         image.unlockFocus()
         image.isTemplate = false
+        Self.statusDotImageCache[cacheKey] = image
         return image
+    }
+
+    private static func cacheSizeKey(for size: CGFloat) -> Int {
+        Int((size * 2).rounded())
     }
 
     private static func statusColor(for state: CrawlAppState) -> NSColor {

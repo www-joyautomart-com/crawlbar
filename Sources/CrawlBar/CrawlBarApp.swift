@@ -21,6 +21,9 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private var refreshTimer: Timer?
     private var refreshAnimationTimer: Timer?
     private var refreshAnimationFrame = 0
+    private var pendingMenuReloadTask: Task<Void, Never>?
+    private var isMenuOpen = false
+    private var menuNeedsReloadAfterClose = false
     private let settingsWindowController = CrawlBarSettingsWindowController()
     private let model = CrawlBarMenuModel()
 
@@ -45,17 +48,21 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         self.updateStatusButtonImage()
         self.reloadMenu()
         self.model.refreshAll { [weak self] in
-            self?.reloadMenu()
+            self?.scheduleMenuReload()
         }
         self.scheduleRefreshTimer()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         CrawlBarLog.app.notice("CrawlBar terminated")
+        self.pendingMenuReloadTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
     private func reloadMenu() {
+        self.pendingMenuReloadTask?.cancel()
+        self.pendingMenuReloadTask = nil
+        let startedAt = CFAbsoluteTimeGetCurrent()
         let menu = self.statusItem?.menu ?? NSMenu()
         menu.autoenablesItems = false
         menu.delegate = self
@@ -91,6 +98,21 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         }
         self.menuItemFactory.refreshViewHeights(in: menu)
         self.syncRefreshAnimation()
+        let elapsedMilliseconds = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000
+        CrawlBarLog.app.debug("Reloaded menu in \(elapsedMilliseconds, privacy: .public)ms")
+    }
+
+    private func scheduleMenuReload() {
+        guard !self.isMenuOpen else {
+            self.menuNeedsReloadAfterClose = true
+            return
+        }
+        self.pendingMenuReloadTask?.cancel()
+        self.pendingMenuReloadTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            guard !Task.isCancelled else { return }
+            self?.reloadMenu()
+        }
     }
 
     private func appMenuItem(for installation: CrawlAppInstallation) -> NSMenuItem {
@@ -135,7 +157,7 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         self.refreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.model.runDueAutoSync {
-                    self?.reloadMenu()
+                    self?.scheduleMenuReload()
                 }
             }
         }
@@ -175,7 +197,7 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     @objc private func refreshAll(_ sender: Any?) {
         self.model.refreshAll { [weak self] in
-            self?.reloadMenu()
+            self?.scheduleMenuReload()
         }
         self.reloadMenu()
     }
@@ -193,9 +215,6 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         CrawlBarLog.app.debug("Opening settings")
         self.showInApplicationSwitcher()
         self.settingsWindowController.show(appID: appID)
-        self.model.reloadInstallations()
-        self.scheduleRefreshTimer()
-        self.reloadMenu()
     }
 
     private func showInApplicationSwitcher() {
@@ -220,12 +239,20 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        self.reloadMenu()
-        self.menuItemFactory.refreshViewHeights(in: menu)
+        self.isMenuOpen = true
+        if self.pendingMenuReloadTask != nil {
+            self.reloadMenu()
+            self.isMenuOpen = true
+        }
     }
 
     func menuDidClose(_ menu: NSMenu) {
+        self.isMenuOpen = false
         self.menuItemFactory.clearHighlights(in: menu)
+        if self.menuNeedsReloadAfterClose {
+            self.menuNeedsReloadAfterClose = false
+            self.reloadMenu()
+        }
     }
 
     func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
@@ -236,7 +263,7 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     @objc private func statusesDidChange(_ notification: Notification) {
-        self.reloadMenu()
+        self.scheduleMenuReload()
     }
 
     @objc private func configDidChange(_ notification: Notification) {
