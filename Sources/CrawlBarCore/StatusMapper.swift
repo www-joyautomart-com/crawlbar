@@ -41,6 +41,10 @@ public struct CrawlStatusMapper: Sendable {
                 status = self.telecrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             case BuiltInCrawlApps.notcrawlID:
                 status = self.notcrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
+            case BuiltInCrawlApps.gogcliID:
+                status = self.gogcliStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
+            case BuiltInCrawlApps.wacliID:
+                status = self.wacliStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             default:
                 status = self.genericStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             }
@@ -201,6 +205,126 @@ public struct CrawlStatusMapper: Sendable {
             remote: remote,
             sqliteObject: self.sqliteObjectStatus(in: object),
             sqliteBundle: self.sqliteBundleStatus(in: object))
+    }
+
+    private func gogcliStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds _: Int?) -> CrawlAppStatus {
+        if let accounts = object["accounts"] as? [[String: Any]] {
+            let configuredAccount = accounts.first { account in
+                self.boolValue(["valid"], in: account) != false
+                    && ["oauth", "service-account", "service_account", "oauth+service-account", "oauth+service_account"].contains(
+                        self.stringValue(["auth"], in: account)?.lowercased() ?? "")
+            }
+            let failedAccount = accounts.first { self.boolValue(["valid"], in: $0) == false }
+            let failureSummary = failedAccount.flatMap { account in
+                self.stringValue(["error", "hint", "email"], in: account)
+            }
+            return CrawlAppStatus(
+                appID: result.appID,
+                state: configuredAccount == nil ? .needsAuth : .current,
+                summary: configuredAccount == nil ? failureSummary ?? "Google auth needs setup" : "Google auth configured")
+        }
+
+        if let status = self.statusValue(["status"], in: object), object["checks"] != nil {
+            let checks = object["checks"] as? [[String: Any]]
+            let failedCheck = checks?.first { check in
+                self.statusValue(["status"], in: check) != .current
+            }
+            let failureSummary = failedCheck.flatMap { check in
+                self.stringValue(["detail", "hint", "name"], in: check)
+            }
+            let mappedState = status == .current
+                ? CrawlAppState.current
+                : self.gogcliDoctorFailureState(failedCheck)
+            return CrawlAppStatus(
+                appID: result.appID,
+                state: mappedState,
+                summary: mappedState == .current ? "Google auth configured" : failureSummary ?? "Google auth needs setup",
+                configPath: self.gogcliConfigPath(fromChecks: checks))
+        }
+
+        let account = self.firstObject(["account"], in: object) ?? [:]
+        let config = self.firstObject(["config"], in: object) ?? [:]
+        let serviceAccountConfigured = self.boolValue(["service_account_configured"], in: account) ?? false
+        return CrawlAppStatus(
+            appID: result.appID,
+            state: serviceAccountConfigured ? .current : .needsAuth,
+            summary: serviceAccountConfigured ? "Google service account configured" : "Google auth needs setup",
+            configPath: self.stringValue(["path"], in: config))
+    }
+
+    private func gogcliDoctorFailureState(_ check: [String: Any]?) -> CrawlAppState {
+        let name = check.flatMap { self.stringValue(["name"], in: $0) }?.lowercased() ?? ""
+        return name.contains("config") ? .needsConfig : .needsAuth
+    }
+
+    private func gogcliConfigPath(fromChecks checks: [[String: Any]]?) -> String? {
+        checks?.first { self.stringValue(["name"], in: $0) == "config.path" }
+            .flatMap { self.stringValue(["detail"], in: $0) }
+    }
+
+    private func wacliStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
+        if self.boolValue(["success"], in: object) == false {
+            return CrawlAppStatus(
+                appID: result.appID,
+                state: .error,
+                summary: self.stringValue(["error"], in: object) ?? "WhatsApp diagnostics failed")
+        }
+
+        let data = self.firstObject(["data"], in: object) ?? object
+        let isAuthenticated = self.boolValue(["authenticated"], in: data) ?? true
+        let storeError = self.stringValue(["store_error"], in: data)?.nilIfBlank
+        if let storeError, (isAuthenticated || !Self.isWacliFirstRunStoreError(storeError)) {
+            return CrawlAppStatus(
+                appID: result.appID,
+                state: .error,
+                summary: storeError,
+                errors: [storeError])
+        }
+        if !isAuthenticated {
+            return CrawlAppStatus(
+                appID: result.appID,
+                state: .needsAuth,
+                summary: "WhatsApp auth needs setup")
+        }
+        let store = self.firstObject(["store"], in: data) ?? data
+        let counts = [
+            self.count("messages", "Messages", ["messages"]),
+            self.count("chats", "Chats", ["chats"]),
+            self.count("contacts", "Contacts", ["contacts"]),
+            self.count("groups", "Groups", ["groups"]),
+        ].compactMap { self.value($0, in: store) }
+        let lastSyncAt = self.dateValue(["last_sync_at"], in: store)
+        let freshness = self.freshness(in: object, lastSyncAt: lastSyncAt, staleAfterSeconds: staleAfterSeconds)
+        let storeDir = self.stringValue(["store_dir"], in: data)
+        return CrawlAppStatus(
+            appID: result.appID,
+            state: self.statusState(in: object, lastSyncAt: lastSyncAt, freshness: freshness, fallback: .current, staleAfterSeconds: staleAfterSeconds),
+            summary: self.summary(from: counts, fallback: "WhatsApp store ready"),
+            configPath: storeDir.map(Self.wacliConfigPath(storeDir:)),
+            databasePath: storeDir.map { URL(fileURLWithPath: $0).appendingPathComponent("wacli.db").path },
+            lastSyncAt: lastSyncAt,
+            counts: counts,
+            freshness: freshness)
+    }
+
+    private static func wacliConfigPath(storeDir: String) -> String {
+        let storeURL = URL(fileURLWithPath: storeDir)
+        if storeURL.deletingLastPathComponent().lastPathComponent == "accounts" {
+            return storeURL
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("config.yaml")
+                .path
+        }
+        return storeURL.appendingPathComponent("config.yaml").path
+    }
+
+    private static func isWacliFirstRunStoreError(_ error: String) -> Bool {
+        let lowercased = error.lowercased()
+        return lowercased.contains("no such file")
+            || lowercased.contains("not found")
+            || lowercased.contains("missing")
+            || lowercased.contains("uninitialized")
     }
 
     private func genericStatus(_ object: [String: Any], result: CrawlCommandResult, staleAfterSeconds: Int?) -> CrawlAppStatus {
@@ -408,7 +532,7 @@ public struct CrawlStatusMapper: Sendable {
         switch rawValue.lowercased() {
         case "ok", "success", "healthy", "ready":
             return .current
-        case "warning", "degraded":
+        case "warn", "warning", "degraded":
             return .stale
         case "failed", "failure":
             return .error

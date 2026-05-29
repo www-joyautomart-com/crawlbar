@@ -226,41 +226,48 @@ public enum BuiltInCrawlApps {
     public static let gogcli = CrawlAppManifest(
         id: Self.gogcliID,
         displayName: "Google",
-        description: "Google account archive connector",
-        availability: .comingSoon,
-        binary: .init(name: "gogcli"),
+        description: "Google Workspace and account automation",
+        binary: .init(name: "gog"),
         branding: .init(symbolName: "g.circle", accentColor: "#4285F4"),
         paths: .init(
-            defaultConfig: "~/.config/gogcli/config.toml",
-            configEnv: "GOGCLI_CONFIG",
-            defaultDatabase: "~/.config/gogcli/gogcli.db",
-            defaultCache: "~/.config/gogcli/cache",
-            defaultLogs: "~/.config/gogcli/logs",
-            defaultShare: "~/.config/gogcli/share"),
-        commands: [:],
-        capabilities: [],
-        privacy: .init(exportsSecrets: false))
+            defaultConfig: "~/Library/Application Support/gogcli/config.json",
+            defaultCache: "~/Library/Application Support/gogcli",
+            defaultLogs: "~/Library/Logs/gogcli"),
+        commands: [
+            "status": ["auth", "list", "--check", "--json", "--no-input"],
+            "doctor": ["auth", "doctor", "--check", "--json", "--no-input"],
+            "search": ["--json", "--no-input", "search"],
+        ],
+        capabilities: [.status, .doctor, .search],
+        statusRequiresSecrets: false,
+        privacy: .init(exportsSecrets: false, localOnlyScopes: ["Google account config", "OAuth token metadata"]),
+        install: .init(method: .homebrew, package: "openclaw/tap/gogcli"))
 
     public static let wacli = CrawlAppManifest(
         id: Self.wacliID,
         displayName: "WhatsApp",
-        description: "WhatsApp message archive connector",
-        availability: .comingSoon,
+        description: "WhatsApp linked-device message archive",
         binary: .init(name: "wacli"),
         branding: .init(
             symbolName: "message.circle",
             accentColor: "#25D366",
             bundleIdentifier: "net.whatsapp.WhatsApp"),
         paths: .init(
-            defaultConfig: "~/.config/wacli/config.toml",
-            configEnv: "WACLI_CONFIG",
-            defaultDatabase: "~/.config/wacli/wacli.db",
-            defaultCache: "~/.config/wacli/cache",
-            defaultLogs: "~/.config/wacli/logs",
-            defaultShare: "~/.config/wacli/share"),
-        commands: [:],
-        capabilities: [],
-        privacy: .init(containsPrivateMessages: true, exportsSecrets: false))
+            defaultConfig: "~/.wacli/config.yaml",
+            defaultDatabase: "~/.wacli/wacli.db",
+            defaultCache: "~/.wacli",
+            defaultLogs: "~/.wacli/logs",
+            defaultShare: "~/.wacli/share"),
+        commands: [
+            "status": ["--read-only", "--json", "doctor"],
+            "doctor": ["--read-only", "--json", "doctor"],
+            "refresh": ["--json", "sync", "--once"],
+            "search": ["--read-only", "--json", "messages", "search"],
+        ],
+        capabilities: [.status, .doctor, .refresh, .search],
+        statusRequiresSecrets: false,
+        privacy: .init(containsPrivateMessages: true, exportsSecrets: false, localOnlyScopes: ["WhatsApp chats", "contacts", "messages"]),
+        install: .init(method: .homebrew, package: "openclaw/tap/wacli"))
 
     public static let birdclaw = CrawlAppManifest(
         id: Self.birdclawID,

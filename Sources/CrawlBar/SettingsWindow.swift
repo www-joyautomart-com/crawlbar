@@ -681,17 +681,29 @@ struct CrawlBarSettingsView: View {
         NavigationSplitView(columnVisibility: self.animatedColumnVisibility) {
             List(selection: self.sidebarSelection) {
                 Section("CrawlBar") {
-                    Label("General", systemImage: "gearshape")
+                    CrawlBarGeneralSidebarRow(isSelected: self.model.selectedSidebarItem == .general)
                         .tag(CrawlBarSettingsSidebarItem.general as CrawlBarSettingsSidebarItem?)
+                        .contentShape(Rectangle())
+                        .listRowBackground(CrawlBarSidebarSelectionBackground(isSelected: self.model.selectedSidebarItem == .general))
+                        .onTapGesture {
+                            self.model.selectedSidebarItem = .general
+                        }
                 }
                 Section("Crawlers") {
                     ForEach(self.model.apps) { app in
+                        let item = CrawlBarSettingsSidebarItem.crawler(app.id)
                         CrawlBarSidebarRow(
                             app: app,
                             manifest: self.model.installations[app.id]?.manifest,
                             status: self.model.statuses[app.id],
-                            binaryPath: self.model.installations[app.id]?.binaryPath)
-                            .tag(CrawlBarSettingsSidebarItem.crawler(app.id) as CrawlBarSettingsSidebarItem?)
+                            binaryPath: self.model.installations[app.id]?.binaryPath,
+                            isSelected: self.model.selectedSidebarItem == item)
+                            .tag(item as CrawlBarSettingsSidebarItem?)
+                            .contentShape(Rectangle())
+                            .listRowBackground(CrawlBarSidebarSelectionBackground(isSelected: self.model.selectedSidebarItem == item))
+                            .onTapGesture {
+                                self.model.selectedSidebarItem = item
+                            }
                     }
                 }
             }
@@ -955,11 +967,40 @@ private struct CrawlBarGeneralSettingsView: View {
     }
 }
 
+struct CrawlBarGeneralSidebarRow: View {
+    let isSelected: Bool
+
+    var body: some View {
+        Label("General", systemImage: "gearshape")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(self.isSelected ? Color.white : Color.primary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct CrawlBarSidebarSelectionBackground: View {
+    let isSelected: Bool
+
+    var body: some View {
+        if self.isSelected {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.accentColor.opacity(0.82))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+        } else {
+            Color.clear
+        }
+    }
+}
+
 struct CrawlBarSidebarRow: View {
     let app: CrawlBarAppConfig
     let manifest: CrawlAppManifest?
     let status: CrawlAppStatus?
     let binaryPath: String?
+    let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 11) {
@@ -969,6 +1010,7 @@ struct CrawlBarSidebarRow: View {
                 HStack(spacing: 6) {
                     Text(CrawlBarCrawlerTitle.text(for: self.app.id, manifest: self.manifest))
                         .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(self.isSelected ? Color.white : Color.primary)
                         .lineLimit(1)
                     CrawlBarStatusDot(state: self.rowState)
                 }
@@ -979,6 +1021,7 @@ struct CrawlBarSidebarRow: View {
             }
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, 7)
         .padding(.vertical, 5)
         .opacity(self.manifest?.availability == .comingSoon ? 0.58 : 1)
     }
@@ -1031,13 +1074,14 @@ struct CrawlBarSidebarRow: View {
     }
 
     private var subtitleColor: Color {
+        if self.isSelected { return Color.white.opacity(0.78) }
         switch self.rowState {
         case .needsConfig, .needsAuth, .error:
-            .red
+            return Color.red
         case .stale where self.app.id == BuiltInCrawlApps.graincrawlID && self.status?.state == .error:
-            .yellow
+            return Color.yellow
         default:
-            .secondary
+            return Color.secondary
         }
     }
 }
@@ -2280,7 +2324,7 @@ struct CrawlBarSwitchRow: View {
             Toggle(self.title, isOn: self.$isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .controlSize(.regular)
+                .controlSize(.mini)
         }
     }
 }
@@ -2522,6 +2566,7 @@ struct CrawlBarConfigOptionField: View {
             Toggle("", isOn: self.booleanBinding)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .controlSize(.mini)
         case .choice:
             Picker("Value", selection: self.$value) {
                 ForEach(self.choices, id: \.self) { choice in

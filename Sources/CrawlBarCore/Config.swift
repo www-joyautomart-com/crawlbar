@@ -122,7 +122,7 @@ public struct CrawlBarAppConfig: Codable, Equatable, Sendable, Identifiable {
 }
 
 public struct CrawlBarConfig: Codable, Equatable, Sendable {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
 
     public var version: Int
     public var refreshFrequency: RefreshFrequency
@@ -152,6 +152,9 @@ public struct CrawlBarConfig: Codable, Equatable, Sendable {
                 app.autoRefreshEnabled = false
                 app.shareEnabled = false
                 app.shareAfterRefresh = false
+            } else if self.version < 2, Self.newlyAvailableAppIDs.contains(app.id), !app.enabled, !app.showInMenuBar {
+                app.enabled = true
+                app.showInMenuBar = true
             }
             normalizedApps.append(app)
         }
@@ -165,6 +168,11 @@ public struct CrawlBarConfig: Codable, Equatable, Sendable {
             manifestDirectories: self.manifestDirectories.isEmpty ? ["~/.crawlbar/apps"] : self.manifestDirectories,
             apps: normalizedApps)
     }
+
+    private static let newlyAvailableAppIDs: Set<CrawlAppID> = [
+        BuiltInCrawlApps.gogcliID,
+        BuiltInCrawlApps.wacliID,
+    ]
 
     public func appConfig(for id: CrawlAppID) -> CrawlBarAppConfig? {
         self.apps.first { $0.id == id }

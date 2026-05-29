@@ -250,6 +250,10 @@ public struct CrawlCommandRunner: @unchecked Sendable {
         extraArguments: [String])
         -> [String]
     {
+        if installation.id == BuiltInCrawlApps.wacliID, action == "query" || action == "search" {
+            return commandArguments + Self.wacliSearchArguments(extraArguments)
+        }
+
         guard installation.id == BuiltInCrawlApps.gitcrawlID,
               let repository = GitcrawlStatusSnapshot.repository(for: installation)
         else {
@@ -265,6 +269,24 @@ public struct CrawlCommandRunner: @unchecked Sendable {
         }
 
         return commandArguments + extraArguments
+    }
+
+    private static func wacliSearchArguments(_ extraArguments: [String]) -> [String] {
+        var queryParts: [String] = []
+        var optionArguments: [String] = []
+        var reachedOptions = false
+        for argument in extraArguments {
+            if argument.hasPrefix("-") {
+                reachedOptions = true
+            }
+            if reachedOptions {
+                optionArguments.append(argument)
+            } else {
+                queryParts.append(argument)
+            }
+        }
+        guard queryParts.count > 1 else { return extraArguments }
+        return [queryParts.joined(separator: " ")] + optionArguments
     }
 
     private static func gitcrawlQueryNeedsRepository(action: String, extraArguments: [String]) -> Bool {

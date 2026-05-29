@@ -10,6 +10,9 @@
 - Open Settings immediately by moving manifest, binary, config, and recent-log loading off the main actor.
 - Use native switch-style controls for crawler boolean settings.
 - Replace the generated app icon with a richer image-generated CrawlBar icon and use it for both runtime and packaged app icons.
+- Enable Google (`gog`) and WhatsApp (`wacli`) crawler entries with real status, doctor, search, and install wiring.
+- Fix Settings sidebar clicks so selecting crawler rows reliably updates the detail pane, and show the active sidebar selection clearly.
+- Normalize crawler command environments with `HOME` so launchd-started menu bar status matches terminal status for tools like `gog`.
 - Add Telecrawl as a built-in Telegram crawler with status, import, doctor, search, privacy, install metadata, and branded menu icon support.
 - Make menu and settings opening faster by caching rendered crawler icons, coalescing status menu rebuilds, and avoiding synchronous refresh work during settings presentation.
 - Add CrawlBar support for Cloudflare remote crawler archives, including built-in `remote status`, `remote archives`, and compressed SQLite `cloud publish` actions for `gitcrawl` and `discrawl`.
