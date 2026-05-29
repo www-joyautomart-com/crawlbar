@@ -40,6 +40,22 @@ enum CrawlBarCrawlerTitle {
 }
 
 @MainActor
+enum CrawlBarNativeAppLocator {
+    private static var urlsByBundleIdentifier: [String: URL] = [:]
+
+    static func url(for bundleIdentifier: String) -> URL? {
+        if let cached = Self.urlsByBundleIdentifier[bundleIdentifier] {
+            return cached
+        }
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
+            return nil
+        }
+        Self.urlsByBundleIdentifier[bundleIdentifier] = url
+        return url
+    }
+}
+
+@MainActor
 enum CrawlBarIconFactory {
     private static var imageCache: [String: NSImage] = [:]
     private static var menuBarImageCache: [String: NSImage] = [:]
@@ -166,7 +182,7 @@ enum CrawlBarIconFactory {
             }
         }
         if let bundleIdentifier = manifest?.branding.bundleIdentifier?.nilIfBlank,
-           let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+           let appURL = CrawlBarNativeAppLocator.url(for: bundleIdentifier)
         {
             return Self.sizedImage(NSWorkspace.shared.icon(forFile: appURL.path), size: size)
         }
@@ -525,14 +541,12 @@ struct CrawlBarBrandIcon: View {
     let appID: CrawlAppID
 
     var body: some View {
-        GeometryReader { proxy in
-            Image(nsImage: CrawlBarIconFactory.image(
-                for: self.appID,
-                manifest: self.manifest,
-                size: max(16, min(proxy.size.width, proxy.size.height))))
-            .resizable()
-            .interpolation(.high)
-        }
+        Image(nsImage: CrawlBarIconFactory.image(
+            for: self.appID,
+            manifest: self.manifest,
+            size: 64))
+        .resizable()
+        .interpolation(.high)
         .aspectRatio(1, contentMode: .fit)
     }
 }

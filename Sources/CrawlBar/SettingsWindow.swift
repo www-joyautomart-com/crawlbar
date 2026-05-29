@@ -259,8 +259,18 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
                 self.installations = installationsByID
                 self.apps = Self.sortedAppConfigs(self.apps, installationsByID: installationsByID)
             }
+            let partitioned = Self.partitionStatuses(installations: installations, statusService: statusService)
+            if !partitioned.immediate.isEmpty {
+                await MainActor.run {
+                    guard self.refreshGeneration == generation else { return }
+                    for status in partitioned.immediate {
+                        self.statuses[status.appID] = status
+                    }
+                    CrawlBarStateBroadcast.statusesDidChange(Dictionary(uniqueKeysWithValues: partitioned.immediate.map { ($0.appID, $0) }))
+                }
+            }
             await withTaskGroup(of: CrawlAppStatus.self) { group in
-                for installation in installations {
+                for installation in partitioned.commandInstallations {
                     group.addTask {
                         guard !Task.isCancelled else {
                             return CrawlAppStatus(appID: installation.id, state: .unknown, summary: "Refresh cancelled")
@@ -283,6 +293,23 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
                 self.refreshTask = nil
             }
         }
+    }
+
+    nonisolated private static func partitionStatuses(
+        installations: [CrawlAppInstallation],
+        statusService: CrawlStatusService)
+        -> (immediate: [CrawlAppStatus], commandInstallations: [CrawlAppInstallation])
+    {
+        var immediate: [CrawlAppStatus] = []
+        var commandInstallations: [CrawlAppInstallation] = []
+        for installation in installations {
+            if let status = statusService.immediateStatus(for: installation) {
+                immediate.append(status)
+            } else {
+                commandInstallations.append(installation)
+            }
+        }
+        return (immediate, commandInstallations)
     }
 
     func runAction(_ action: String, appID: CrawlAppID) {
@@ -1790,7 +1817,7 @@ struct CrawlBarAppDetailView: View {
     private func summaryText(label: String, bytes: Int?) -> String {
         [
             label,
-            bytes.map { ByteCountFormatter.crawlBarFileSize.string(fromByteCount: Int64($0)) },
+            bytes.map { CrawlBarFileSizeText.string(fromByteCount: Int64($0)) },
         ].compactMap { $0?.nilIfBlank }.joined(separator: " · ")
     }
 
@@ -1798,7 +1825,7 @@ struct CrawlBarAppDetailView: View {
         [
             bundle.format?.nilIfBlank,
             bundle.compression?.nilIfBlank,
-            bundle.compressedBytes.map { ByteCountFormatter.crawlBarFileSize.string(fromByteCount: Int64($0)) },
+            bundle.compressedBytes.map { CrawlBarFileSizeText.string(fromByteCount: Int64($0)) },
             bundle.partCount.map { "\($0) part\($0 == 1 ? "" : "s")" },
         ].compactMap { $0 }.joined(separator: " · ")
     }
@@ -1876,12 +1903,12 @@ struct CrawlBarAppDetailView: View {
 
     private var nativeAppAvailable: Bool {
         guard let bundleIdentifier = self.manifest?.branding.bundleIdentifier?.nilIfBlank else { return false }
-        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil
+        return CrawlBarNativeAppLocator.url(for: bundleIdentifier) != nil
     }
 
     private func openNativeApp() {
         guard let bundleIdentifier = self.manifest?.branding.bundleIdentifier?.nilIfBlank,
-              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+              let url = CrawlBarNativeAppLocator.url(for: bundleIdentifier)
         else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
@@ -2240,7 +2267,7 @@ private struct CrawlBarRemoteStoreSummary {
         guard self.kind == .cloudflare else { return self.shortName }
         let pieces = [
             self.shortName,
-            self.sqliteBundle?.compressedBytes.map { ByteCountFormatter.crawlBarFileSize.string(fromByteCount: Int64($0)) },
+            self.sqliteBundle?.compressedBytes.map { CrawlBarFileSizeText.string(fromByteCount: Int64($0)) },
             self.sqliteBundle?.compression?.nilIfBlank,
         ].compactMap { $0 }
         return pieces.isEmpty ? "Cloudflare archive" : pieces.joined(separator: " · ")
@@ -2255,11 +2282,10 @@ private struct CrawlBarRemoteStoreSummary {
     }
 
     var compressed: String? {
-        let formatter = ByteCountFormatter.crawlBarFileSize
         let values = [
-            sqliteBundle?.compressedBytes.map { formatter.string(fromByteCount: Int64($0)) },
-            sqliteBundle?.rawBytes.map { formatter.string(fromByteCount: Int64($0)) + " raw" },
-            sqliteObject?.bytes.map { formatter.string(fromByteCount: Int64($0)) + " object" },
+            sqliteBundle?.compressedBytes.map { CrawlBarFileSizeText.string(fromByteCount: Int64($0)) },
+            sqliteBundle?.rawBytes.map { CrawlBarFileSizeText.string(fromByteCount: Int64($0)) + " raw" },
+            sqliteObject?.bytes.map { CrawlBarFileSizeText.string(fromByteCount: Int64($0)) + " object" },
         ].compactMap { $0?.nilIfBlank }
         return values.isEmpty ? nil : values.joined(separator: " / ")
     }
@@ -2321,7 +2347,7 @@ struct CrawlBarDatabaseRow: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 4) {
                 if let bytes = self.database.bytes {
-                    Text(ByteCountFormatter.crawlBarFileSize.string(fromByteCount: Int64(bytes)))
+                    Text(CrawlBarFileSizeText.string(fromByteCount: Int64(bytes)))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
@@ -2488,22 +2514,41 @@ enum CrawlBarStatusLabel {
     }
 }
 
+@MainActor
 enum CrawlBarDateText {
-    @MainActor
-    static func relative(_ date: Date) -> String {
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        return formatter
+    }()
+
+    static func relative(_ date: Date) -> String {
+        self.relativeFormatter.localizedString(for: date, relativeTo: Date())
     }
 }
 
-extension ByteCountFormatter {
-    static var crawlBarFileSize: ByteCountFormatter {
+enum CrawlBarFileSizeText {
+    private static let formatter = CrawlBarLockedByteCountFormatter()
+
+    static func string(fromByteCount byteCount: Int64) -> String {
+        self.formatter.string(fromByteCount: byteCount)
+    }
+}
+
+private final class CrawlBarLockedByteCountFormatter: @unchecked Sendable {
+    private let lock = NSLock()
+    private let formatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useKB, .useMB, .useGB]
         formatter.countStyle = .file
         formatter.includesUnit = true
         formatter.includesCount = true
         return formatter
+    }()
+
+    func string(fromByteCount byteCount: Int64) -> String {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return self.formatter.string(fromByteCount: byteCount)
     }
 }

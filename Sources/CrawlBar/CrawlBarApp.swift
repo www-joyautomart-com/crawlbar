@@ -346,8 +346,19 @@ final class CrawlBarMenuModel: NSObject {
                 self.installations = installations
                 onComplete()
             }
+            let partitioned = Self.partitionStatuses(installations: installations, statusService: statusService)
+            if !partitioned.immediate.isEmpty {
+                await MainActor.run {
+                    guard self.refreshGeneration == generation else { return }
+                    for status in partitioned.immediate {
+                        self.statuses[status.appID] = status
+                    }
+                    CrawlBarStateBroadcast.statusesDidChange(Dictionary(uniqueKeysWithValues: partitioned.immediate.map { ($0.appID, $0) }))
+                    onComplete()
+                }
+            }
             await withTaskGroup(of: CrawlAppStatus.self) { group in
-                for installation in installations {
+                for installation in partitioned.commandInstallations {
                     group.addTask {
                         guard !Task.isCancelled else {
                             return CrawlAppStatus(appID: installation.id, state: .unknown, summary: "Refresh cancelled")
@@ -372,6 +383,23 @@ final class CrawlBarMenuModel: NSObject {
                 onComplete()
             }
         }
+    }
+
+    nonisolated private static func partitionStatuses(
+        installations: [CrawlAppInstallation],
+        statusService: CrawlStatusService)
+        -> (immediate: [CrawlAppStatus], commandInstallations: [CrawlAppInstallation])
+    {
+        var immediate: [CrawlAppStatus] = []
+        var commandInstallations: [CrawlAppInstallation] = []
+        for installation in installations {
+            if let status = statusService.immediateStatus(for: installation) {
+                immediate.append(status)
+            } else {
+                commandInstallations.append(installation)
+            }
+        }
+        return (immediate, commandInstallations)
     }
 
     func runDueAutoSync(onComplete: @escaping @MainActor () -> Void) {

@@ -13,16 +13,7 @@ public struct CrawlStatusService: @unchecked Sendable {
     }
 
     public func status(for installation: CrawlAppInstallation, timeoutSeconds: TimeInterval = 30) -> CrawlAppStatus {
-        guard installation.manifest.availability == .available else {
-            return CrawlAppStatus(appID: installation.id, state: .disabled, summary: "Coming soon")
-        }
-        guard installation.enabled else {
-            return CrawlAppStatus(appID: installation.id, state: .disabled, summary: "Disabled in CrawlBar config")
-        }
-        guard installation.binaryPath != nil else {
-            return CrawlAppStatus(appID: installation.id, state: .needsConfig, summary: "\(installation.manifest.binary.name) is not on PATH")
-        }
-        if let status = GitcrawlStatusSnapshot.status(for: installation) {
+        if let status = self.immediateStatus(for: installation) {
             return status
         }
         do {
@@ -39,5 +30,18 @@ public struct CrawlStatusService: @unchecked Sendable {
         } catch {
             return CrawlAppStatus(appID: installation.id, state: .error, summary: error.localizedDescription, errors: [error.localizedDescription])
         }
+    }
+
+    public func immediateStatus(for installation: CrawlAppInstallation) -> CrawlAppStatus? {
+        guard installation.manifest.availability == .available else {
+            return CrawlAppStatus(appID: installation.id, state: .disabled, summary: "Coming soon")
+        }
+        guard installation.enabled else {
+            return CrawlAppStatus(appID: installation.id, state: .disabled, summary: "Disabled in CrawlBar config")
+        }
+        guard installation.binaryPath != nil else {
+            return CrawlAppStatus(appID: installation.id, state: .needsConfig, summary: "\(installation.manifest.binary.name) is not on PATH")
+        }
+        return GitcrawlStatusSnapshot.status(for: installation)
     }
 }

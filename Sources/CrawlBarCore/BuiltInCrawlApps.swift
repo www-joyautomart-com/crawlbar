@@ -23,8 +23,10 @@ public enum BuiltInCrawlApps {
         Self.graincrawl,
     ]
 
+    public static let allByID = Dictionary(uniqueKeysWithValues: Self.all.map { ($0.id, $0) })
+
     public static func manifest(for id: CrawlAppID) -> CrawlAppManifest? {
-        self.all.first { $0.id == id }
+        self.allByID[id]
     }
 
     public static let gitcrawl = CrawlAppManifest(
