@@ -31,15 +31,18 @@ final class CrawlBarSettingsWindowController: NSObject, NSWindowDelegate {
 
         let model: CrawlBarSettingsModel
         if let cachedModel = self.model {
-            cachedModel.load()
             model = cachedModel
         } else {
-            model = CrawlBarSettingsModel()
+            model = CrawlBarSettingsModel(loadImmediately: false)
             self.model = model
         }
         if let appID {
             model.selectedAppID = appID
+        } else if model.selectedSidebarItem == nil {
+            model.selectedSidebarItem = .general
         }
+        model.isLoading = true
+        model.lastError = nil
         let window = NSWindow(
             contentRect: NSRect(
                 x: 0,
@@ -60,7 +63,10 @@ final class CrawlBarSettingsWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate()
         self.window = window
-        self.refreshStatusAfterPresentation(model: model, window: window)
+        model.loadForPresentation { [weak self, weak window] in
+            guard let self, let window else { return }
+            self.refreshStatusAfterPresentation(model: model, window: window)
+        }
     }
 
     private func refreshStatusAfterPresentation(model: CrawlBarSettingsModel, window: NSWindow) {
@@ -106,11 +112,16 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
     @Published var recentResults: [CrawlAppID: CrawlCommandResult] = [:]
     @Published var lastError: String?
     @Published var manifestDiagnostics: [CrawlManifestDiagnostic] = []
+    @Published var isLoading = false
+    @Published fileprivate var manifestDirectories: [String] = ["~/.crawlbar/apps"]
 
     private var refreshTask: Task<Void, Never>?
+    private var loadTask: Task<Void, Never>?
     private var pendingSaveTask: Task<Void, Never>?
     private var refreshGeneration = UUID()
-    private var manifestDirectories: [String] = ["~/.crawlbar/apps"]
+    private var loadGeneration = UUID()
+    private var recentResultsGeneration = UUID()
+    private var hasLoadedSnapshot = false
     private var clearedNativeSecretIDsByAppID: [CrawlAppID: Set<String>] = [:]
     private let store = CrawlBarConfigStore()
     private let registry = CrawlAppRegistry()
@@ -120,7 +131,7 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
     private let installer = CrawlInstaller()
     private let logStore = CrawlActionLogStore()
 
-    override init() {
+    init(loadImmediately: Bool = true) {
         let runner = CrawlCommandRunner()
         self.runner = runner
         self.statusService = CrawlStatusService(runner: runner)
@@ -130,7 +141,11 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
             selector: #selector(Self.statusesDidChange(_:)),
             name: .crawlBarStatusesDidChange,
             object: nil)
-        self.load()
+        if loadImmediately {
+            self.load()
+        } else {
+            self.selectedSidebarItem = .general
+        }
     }
 
     deinit {
@@ -150,37 +165,34 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
 
     func load() {
         do {
-            let config = try self.store.loadOrCreateDefault()
-            self.manifestDiagnostics = CrawlManifestCatalog().diagnostics(config: config)
-            let loadedInstallations = try self.registry.installations(includeDisabled: true)
-            let manifests = Dictionary(uniqueKeysWithValues: loadedInstallations.map { ($0.id, $0.manifest) })
-            let appConfigsByID = Dictionary(uniqueKeysWithValues: config.apps.map { ($0.id, $0) })
-            let installationsByID = Dictionary(uniqueKeysWithValues: loadedInstallations.map { ($0.id, $0) })
-            let apps = loadedInstallations.map { installation in
-                let appConfig = appConfigsByID[installation.id] ?? CrawlBarAppConfig(
-                    id: installation.id,
-                    enabled: installation.manifest.availability == .available,
-                    showInMenuBar: installation.manifest.availability == .available)
-                guard let manifest = manifests[appConfig.id] else { return appConfig }
-                var copy = appConfig
-                copy.configValues = self.nativeConfigStore.resolvedConfigValues(
-                    appConfig: appConfig,
-                    manifest: manifest,
-                    includeSecrets: false)
-                return copy
-            }
-            self.apps = Self.sortedAppConfigs(apps, installationsByID: installationsByID)
-            self.refreshFrequency = config.refreshFrequency
-            self.manifestDirectories = config.manifestDirectories
-            self.installations = installationsByID
-            if !self.sidebarSelectionIsValid {
-                self.selectedSidebarItem = self.apps.first.map { .crawler($0.id) } ?? .general
-            }
-            self.loadRecentResults()
-            self.lastError = nil
+            self.apply(try Self.loadSnapshot())
         } catch {
             CrawlBarLog.config.error("Settings load failed: \(error.localizedDescription, privacy: .public)")
             self.lastError = error.localizedDescription
+        }
+    }
+
+    func loadForPresentation(onLoaded: @escaping @MainActor () -> Void) {
+        self.loadTask?.cancel()
+        let generation = UUID()
+        self.loadGeneration = generation
+        self.isLoading = true
+        self.lastError = nil
+        self.loadTask = Task.detached {
+            let snapshot = Result { try Self.loadSnapshot() }
+            await MainActor.run {
+                guard self.loadGeneration == generation else { return }
+                self.isLoading = false
+                self.loadTask = nil
+                switch snapshot {
+                case .success(let snapshot):
+                    self.apply(snapshot)
+                    onLoaded()
+                case .failure(let error):
+                    CrawlBarLog.config.error("Settings load failed: \(error.localizedDescription, privacy: .public)")
+                    self.lastError = error.localizedDescription
+                }
+            }
         }
     }
 
@@ -212,6 +224,7 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
     }
 
     private func persist() {
+        guard self.hasLoadedSnapshot, !self.isLoading else { return }
         do {
             let config = CrawlBarConfig(
                 refreshFrequency: self.refreshFrequency,
@@ -244,7 +257,7 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
     }
 
     func refreshAll() {
-        self.loadRecentResults()
+        self.loadRecentResultsAsync()
         self.refreshTask?.cancel()
         let generation = UUID()
         self.refreshGeneration = generation
@@ -357,13 +370,21 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
     }
 
     private func loadRecentResults() {
-        var resultsByApp: [CrawlAppID: CrawlCommandResult] = [:]
-        for result in self.logStore.recentResults(limit: 200).sorted(by: { $0.finishedAt > $1.finishedAt }) {
-            if resultsByApp[result.appID] == nil {
-                resultsByApp[result.appID] = result
+        self.recentResultsGeneration = UUID()
+        self.recentResults = Self.recentResults(logStore: self.logStore)
+    }
+
+    private func loadRecentResultsAsync() {
+        let logStore = self.logStore
+        let generation = UUID()
+        self.recentResultsGeneration = generation
+        Task.detached {
+            let results = Self.recentResults(logStore: logStore)
+            await MainActor.run {
+                guard self.recentResultsGeneration == generation else { return }
+                self.recentResults = results
             }
         }
-        self.recentResults = resultsByApp
     }
 
     private func mergeStatuses(_ incoming: [CrawlAppID: CrawlAppStatus]) {
@@ -495,6 +516,62 @@ final class CrawlBarSettingsModel: NSObject, ObservableObject {
         }
     }
 
+    private func apply(_ snapshot: CrawlBarSettingsSnapshot) {
+        self.hasLoadedSnapshot = true
+        self.apps = snapshot.apps
+        self.refreshFrequency = snapshot.refreshFrequency
+        self.manifestDirectories = snapshot.manifestDirectories
+        self.installations = snapshot.installations
+        self.recentResults = snapshot.recentResults
+        self.manifestDiagnostics = snapshot.manifestDiagnostics
+        if !self.sidebarSelectionIsValid {
+            self.selectedSidebarItem = self.apps.first.map { .crawler($0.id) } ?? .general
+        }
+        self.lastError = nil
+    }
+
+    nonisolated private static func loadSnapshot() throws -> CrawlBarSettingsSnapshot {
+        let store = CrawlBarConfigStore()
+        let registry = CrawlAppRegistry()
+        let nativeConfigStore = CrawlNativeConfigStore()
+        let logStore = CrawlActionLogStore()
+        let config = try store.loadOrCreateDefault()
+        let loadedInstallations = try registry.installations(includeDisabled: true)
+        let manifests = Dictionary(uniqueKeysWithValues: loadedInstallations.map { ($0.id, $0.manifest) })
+        let appConfigsByID = Dictionary(uniqueKeysWithValues: config.apps.map { ($0.id, $0) })
+        let installationsByID = Dictionary(uniqueKeysWithValues: loadedInstallations.map { ($0.id, $0) })
+        let apps = loadedInstallations.map { installation in
+            let appConfig = appConfigsByID[installation.id] ?? CrawlBarAppConfig(
+                id: installation.id,
+                enabled: installation.manifest.availability == .available,
+                showInMenuBar: installation.manifest.availability == .available)
+            guard let manifest = manifests[appConfig.id] else { return appConfig }
+            var copy = appConfig
+            copy.configValues = nativeConfigStore.resolvedConfigValues(
+                appConfig: appConfig,
+                manifest: manifest,
+                includeSecrets: false)
+            return copy
+        }
+        return CrawlBarSettingsSnapshot(
+            apps: Self.sortedAppConfigs(apps, installationsByID: installationsByID),
+            refreshFrequency: config.refreshFrequency,
+            manifestDirectories: config.manifestDirectories,
+            installations: installationsByID,
+            recentResults: Self.recentResults(logStore: logStore),
+            manifestDiagnostics: CrawlManifestCatalog().diagnostics(config: config))
+    }
+
+    nonisolated private static func recentResults(logStore: CrawlActionLogStore) -> [CrawlAppID: CrawlCommandResult] {
+        var resultsByApp: [CrawlAppID: CrawlCommandResult] = [:]
+        for result in logStore.recentResults(limit: 200).sorted(by: { $0.finishedAt > $1.finishedAt }) {
+            if resultsByApp[result.appID] == nil {
+                resultsByApp[result.appID] = result
+            }
+        }
+        return resultsByApp
+    }
+
     nonisolated private static func sidebarRank(installation: CrawlAppInstallation?) -> Int {
         guard let installation else { return 4 }
         if installation.manifest.availability == .comingSoon { return 3 }
@@ -578,6 +655,15 @@ fileprivate enum CrawlBarSettingsSidebarItem: Hashable {
     case crawler(CrawlAppID)
 }
 
+private struct CrawlBarSettingsSnapshot: Sendable {
+    let apps: [CrawlBarAppConfig]
+    let refreshFrequency: RefreshFrequency
+    let manifestDirectories: [String]
+    let installations: [CrawlAppID: CrawlAppInstallation]
+    let recentResults: [CrawlAppID: CrawlCommandResult]
+    let manifestDiagnostics: [CrawlManifestDiagnostic]
+}
+
 private enum CrawlBarSettingsLayout {
     static let minWindowWidth: CGFloat = 1120
     static let minWindowHeight: CGFloat = 790
@@ -653,46 +739,52 @@ struct CrawlBarSettingsView: View {
                     .padding(.bottom, 12)
             }
             self.selectedDetail
+                .disabled(self.model.isLoading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
     private var selectedDetail: some View {
-        switch self.model.selectedSidebarItem {
-        case .general:
-            CrawlBarGeneralSettingsView(model: self.model)
-        case .crawler(let selectedID):
-            if self.model.apps.contains(where: { $0.id == selectedID })
-            {
-                CrawlBarAppDetailView(
-                    app: self.binding(for: selectedID),
-                    globalRefreshFrequency: self.model.refreshFrequency,
-                    installation: self.model.installations[selectedID],
-                    status: self.model.statuses[selectedID],
-                    latestResult: self.model.recentResults[selectedID],
-                    isRefreshing: self.model.isRefreshing,
-                    runningAction: self.model.runningActions[selectedID],
-                    actionMessage: self.model.actionMessages[selectedID],
-                    refreshStatus: { self.model.refreshAll() },
-                    runAction: { action in self.model.runAction(action, appID: selectedID) },
-                    installApp: { self.model.installApp(selectedID) },
-                    backupDatabases: { self.model.backupDatabases(selectedID) },
-                    openDataFolder: { self.model.openDataFolder(selectedID) },
-                    configValueChanged: { option, value in self.model.configValueDidChange(appID: selectedID, option: option, value: value) },
-                    save: { self.model.save() },
-                    saveDebounced: { self.model.saveDebounced() })
-                    .padding(.horizontal, CrawlBarSettingsLayout.detailHorizontalPadding)
-                    .padding(.vertical, CrawlBarSettingsLayout.detailVerticalPadding)
-            } else {
+        if self.model.isLoading && self.model.apps.isEmpty {
+            ProgressView("Loading settings...")
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        } else {
+            switch self.model.selectedSidebarItem {
+            case .general:
+                CrawlBarGeneralSettingsView(model: self.model)
+            case .crawler(let selectedID):
+                if self.model.apps.contains(where: { $0.id == selectedID })
+                {
+                    CrawlBarAppDetailView(
+                        app: self.binding(for: selectedID),
+                        globalRefreshFrequency: self.model.refreshFrequency,
+                        installation: self.model.installations[selectedID],
+                        status: self.model.statuses[selectedID],
+                        latestResult: self.model.recentResults[selectedID],
+                        isRefreshing: self.model.isRefreshing,
+                        runningAction: self.model.runningActions[selectedID],
+                        actionMessage: self.model.actionMessages[selectedID],
+                        refreshStatus: { self.model.refreshAll() },
+                        runAction: { action in self.model.runAction(action, appID: selectedID) },
+                        installApp: { self.model.installApp(selectedID) },
+                        backupDatabases: { self.model.backupDatabases(selectedID) },
+                        openDataFolder: { self.model.openDataFolder(selectedID) },
+                        configValueChanged: { option, value in self.model.configValueDidChange(appID: selectedID, option: option, value: value) },
+                        save: { self.model.save() },
+                        saveDebounced: { self.model.saveDebounced() })
+                        .padding(.horizontal, CrawlBarSettingsLayout.detailHorizontalPadding)
+                        .padding(.vertical, CrawlBarSettingsLayout.detailVerticalPadding)
+                } else {
+                    ContentUnavailableView(
+                        "No crawler selected",
+                        systemImage: "sidebar.left")
+                }
+            case nil:
                 ContentUnavailableView(
                     "No crawler selected",
                     systemImage: "sidebar.left")
             }
-        case nil:
-            ContentUnavailableView(
-                "No crawler selected",
-                systemImage: "sidebar.left")
         }
     }
 
@@ -847,7 +939,7 @@ private struct CrawlBarGeneralSettingsView: View {
     }
 
     private var manifestDirectories: [String] {
-        (try? CrawlBarConfigStore().loadOrCreateDefault().manifestDirectories) ?? ["~/.crawlbar/apps"]
+        self.model.manifestDirectories
     }
 
     private var readyCount: Int {
