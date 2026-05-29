@@ -923,28 +923,6 @@ struct CrawlBarSidebarRow: View {
     }
 }
 
-private enum CrawlBarDetailTab: String, CaseIterable, Identifiable {
-    case overview
-    case data
-    case sync
-    case settings
-
-    var id: String { self.rawValue }
-
-    var title: String {
-        switch self {
-        case .overview:
-            "Overview"
-        case .data:
-            "Data"
-        case .sync:
-            "Sync"
-        case .settings:
-            "Settings"
-        }
-    }
-}
-
 struct CrawlBarAppDetailView: View {
     @Binding var app: CrawlBarAppConfig
     let globalRefreshFrequency: RefreshFrequency
@@ -963,12 +941,10 @@ struct CrawlBarAppDetailView: View {
     let save: () -> Void
     let saveDebounced: () -> Void
 
-    @State private var selectedTab: CrawlBarDetailTab = .overview
-
     private var manifest: CrawlAppManifest? { self.installation?.manifest ?? BuiltInCrawlApps.manifest(for: self.app.id) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             self.header
             if self.isComingSoon {
                 self.comingSoonContent
@@ -979,19 +955,15 @@ struct CrawlBarAppDetailView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.top, 6)
             } else {
-                Picker("Section", selection: self.$selectedTab) {
-                    ForEach(CrawlBarDetailTab.allCases) { tab in
-                        Text(tab.title).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        self.selectedContent
+                    VStack(alignment: .leading, spacing: 20) {
+                        self.statusSection
+                        self.dataSection
+                        self.syncSection
+                        self.configurationSection
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 8)
+                    .padding(.bottom, 10)
                     .padding(.horizontal, 2)
                 }
             }
@@ -1032,28 +1004,6 @@ struct CrawlBarAppDetailView: View {
                 }
             }
             .controlSize(.small)
-        }
-    }
-
-    @ViewBuilder
-    private var selectedContent: some View {
-        switch self.selectedTab {
-        case .overview:
-            self.overviewDashboard
-        case .data:
-            self.remoteStore
-            if !self.usesRemoteStore {
-                self.databases
-            }
-            self.metrics
-        case .sync:
-            self.syncSettings
-            self.cloudArchiveSettings
-            self.gitShareSettings
-        case .settings:
-            self.configuration
-            self.paths
-            self.privacy
         }
     }
 
@@ -1114,8 +1064,8 @@ struct CrawlBarAppDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
-    private var overviewDashboard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private var statusSection: some View {
+        CrawlBarDetailSection(title: "Status") {
             LazyVGrid(
                 columns: [
                     GridItem(.flexible(minimum: 260), spacing: 14, alignment: .top),
@@ -1128,6 +1078,32 @@ struct CrawlBarAppDetailView: View {
                 self.sourceSummary
                 self.latestRunSummary
             }
+        }
+    }
+
+    private var dataSection: some View {
+        CrawlBarDetailSection(title: "Data") {
+            self.remoteStore
+            if !self.usesRemoteStore {
+                self.databases
+            }
+            self.metrics
+        }
+    }
+
+    private var syncSection: some View {
+        CrawlBarDetailSection(title: "Sync") {
+            self.syncSettings
+            self.cloudArchiveSettings
+            self.gitShareSettings
+        }
+    }
+
+    private var configurationSection: some View {
+        CrawlBarDetailSection(title: "Configuration") {
+            self.configuration
+            self.paths
+            self.privacy
         }
     }
 
@@ -1237,11 +1213,9 @@ struct CrawlBarAppDetailView: View {
     @ViewBuilder
     private var databases: some View {
         if let databases = self.status?.databases, !databases.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
+            CrawlBarPanel(title: "Databases") {
                 HStack {
-                    Text("Databases")
-                        .font(.headline)
-                    Spacer()
+                    Spacer(minLength: 0)
                     Button {
                         self.openDataFolder()
                     } label: {
@@ -1273,22 +1247,19 @@ struct CrawlBarAppDetailView: View {
                 }
             }
         } else {
-            ContentUnavailableView(
-                "No database metadata",
-                systemImage: "internaldrive",
-                description: Text("This crawler has not reported database paths or sizes yet."))
-                .frame(maxWidth: .infinity, minHeight: 180)
+            CrawlBarPanel(title: "Databases") {
+                Label("No database metadata yet", systemImage: "internaldrive")
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
     @ViewBuilder
     private var metrics: some View {
         if !self.overviewCounts.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
+            CrawlBarPanel(title: "Counts") {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("Data")
-                        .font(.headline)
-                    Spacer(minLength: 8)
+                    Spacer(minLength: 0)
                     Text(self.overviewDataScope)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1303,11 +1274,10 @@ struct CrawlBarAppDetailView: View {
                 }
             }
         } else {
-            ContentUnavailableView(
-                "No counts yet",
-                systemImage: "number",
-                description: Text("This crawler has not reported count metrics yet."))
-                .frame(maxWidth: .infinity, minHeight: 140)
+            CrawlBarPanel(title: "Counts") {
+                Label("No count metrics yet", systemImage: "number")
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -2008,6 +1978,27 @@ private struct CrawlBarConfigSection: Identifiable {
             caption: self.caption,
             optionIDs: self.optionIDs,
             options: options)
+    }
+}
+
+struct CrawlBarDetailSection<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(self.title)
+                .font(.headline.weight(.semibold))
+            VStack(alignment: .leading, spacing: 14) {
+                self.content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
