@@ -157,6 +157,15 @@ enum CrawlBarIconFactory {
         return image
     }
 
+    static func appIconImage() -> NSImage? {
+        for bundle in Self.resourceBundleCandidates() {
+            if let url = bundle.url(forResource: "AppIcon", withExtension: "png") {
+                return NSImage(contentsOf: url)
+            }
+        }
+        return nil
+    }
+
     private static func cacheSizeKey(for size: CGFloat) -> Int {
         Int((size * 2).rounded())
     }

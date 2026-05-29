@@ -42,6 +42,9 @@ final class CrawlBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         self.settingsWindowController.onClose = { [weak self] in
             self?.hideFromApplicationSwitcher()
         }
+        if let appIcon = CrawlBarIconFactory.appIconImage() {
+            NSApplication.shared.applicationIconImage = appIcon
+        }
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.imagePosition = .imageLeading
         self.statusItem = statusItem

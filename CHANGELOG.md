@@ -8,6 +8,8 @@
 - Replace crawler detail tabs in Settings with one native scrolling detail page grouped into status, data, sync, and configuration sections.
 - Improve app responsiveness by caching repeated config, manifest, binary lookup, native app, formatter, and icon work while reducing status refresh task overhead.
 - Open Settings immediately by moving manifest, binary, config, and recent-log loading off the main actor.
+- Use native switch-style controls for crawler boolean settings.
+- Replace the generated app icon with a richer image-generated CrawlBar icon and use it for both runtime and packaged app icons.
 - Add Telecrawl as a built-in Telegram crawler with status, import, doctor, search, privacy, install metadata, and branded menu icon support.
 - Make menu and settings opening faster by caching rendered crawler icons, coalescing status menu rebuilds, and avoiding synchronous refresh work during settings presentation.
 - Add CrawlBar support for Cloudflare remote crawler archives, including built-in `remote status`, `remote archives`, and compressed SQLite `cloud publish` actions for `gitcrawl` and `discrawl`.

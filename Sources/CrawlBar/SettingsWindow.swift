@@ -1403,31 +1403,27 @@ struct CrawlBarAppDetailView: View {
     private var syncSettings: some View {
         CrawlBarPanel(title: "Sync") {
             VStack(alignment: .leading, spacing: 10) {
-                Toggle(isOn: self.$app.enabled) {
-                    CrawlBarOptionLabel(
-                        title: "Enable crawler",
-                        caption: "Allow CrawlBar to run actions and show live status.")
-                }
+                CrawlBarSwitchRow(
+                    title: "Enable crawler",
+                    caption: "Allow CrawlBar to run actions and show live status.",
+                    isOn: self.$app.enabled)
                     .onChange(of: self.app.enabled) { self.save() }
-                Toggle(isOn: self.$app.showInMenuBar) {
-                    CrawlBarOptionLabel(
-                        title: "Show in menu bar",
-                        caption: "Include this crawler in the menu bar status menu.")
-                }
+                CrawlBarSwitchRow(
+                    title: "Show in menu bar",
+                    caption: "Include this crawler in the menu bar status menu.",
+                    isOn: self.$app.showInMenuBar)
                     .disabled(!self.app.enabled)
                     .onChange(of: self.app.showInMenuBar) { self.save() }
-                Toggle(isOn: self.$app.autoRefreshEnabled) {
-                    CrawlBarOptionLabel(
-                        title: "Run on schedule",
-                        caption: "Refresh this crawler automatically in the background.")
-                }
+                CrawlBarSwitchRow(
+                    title: "Run on schedule",
+                    caption: "Refresh this crawler automatically in the background.",
+                    isOn: self.$app.autoRefreshEnabled)
                     .disabled(!self.app.enabled)
                     .onChange(of: self.app.autoRefreshEnabled) { self.save() }
-                Toggle(isOn: self.usesGlobalRefreshBinding) {
-                    CrawlBarOptionLabel(
-                        title: "Use default schedule",
-                        caption: "Follow the global interval from General settings.")
-                }
+                CrawlBarSwitchRow(
+                    title: "Use default schedule",
+                    caption: "Follow the global interval from General settings.",
+                    isOn: self.usesGlobalRefreshBinding)
                     .disabled(!self.app.enabled || !self.app.autoRefreshEnabled)
             }
             CrawlBarControlRow(
@@ -1516,18 +1512,16 @@ struct CrawlBarAppDetailView: View {
 
     private var gitShareSettings: some View {
         CrawlBarPanel(title: "Git Snapshot") {
-            Toggle(isOn: self.$app.shareEnabled) {
-                CrawlBarOptionLabel(
-                    title: "Manage snapshot",
-                    caption: "Keep a local Git export for this crawler's shareable data.")
-            }
+            CrawlBarSwitchRow(
+                title: "Manage snapshot",
+                caption: "Keep a local Git export for this crawler's shareable data.",
+                isOn: self.$app.shareEnabled)
                 .onChange(of: self.app.shareEnabled) { self.save() }
             if self.hasSnapshotRemote {
-                Toggle(isOn: self.$app.shareAfterRefresh) {
-                    CrawlBarOptionLabel(
-                        title: "Publish after sync",
-                        caption: "Push the snapshot after a scheduled or manual sync.")
-                }
+                CrawlBarSwitchRow(
+                    title: "Publish after sync",
+                    caption: "Push the snapshot after a scheduled or manual sync.",
+                    isOn: self.$app.shareAfterRefresh)
                     .disabled(!self.app.shareEnabled)
                     .onChange(of: self.app.shareAfterRefresh) { self.save() }
                 HStack(spacing: 8) {
@@ -2274,6 +2268,23 @@ struct CrawlBarControlRow<Content: View>: View {
     }
 }
 
+struct CrawlBarSwitchRow: View {
+    let title: String
+    let caption: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            CrawlBarOptionLabel(title: self.title, caption: self.caption)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Toggle(self.title, isOn: self.$isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.regular)
+        }
+    }
+}
+
 struct CrawlBarOptionLabel: View {
     let title: String
     let caption: String
@@ -2510,6 +2521,7 @@ struct CrawlBarConfigOptionField: View {
         case .boolean:
             Toggle("", isOn: self.booleanBinding)
                 .labelsHidden()
+                .toggleStyle(.switch)
         case .choice:
             Picker("Value", selection: self.$value) {
                 ForEach(self.choices, id: \.self) { choice in
