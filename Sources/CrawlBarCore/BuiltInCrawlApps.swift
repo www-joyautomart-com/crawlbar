@@ -228,6 +228,13 @@ public enum BuiltInCrawlApps {
         displayName: "Google",
         description: "Google Workspace and account automation",
         binary: .init(name: "gog"),
+        execution: .init(
+            kind: .local,
+            kindConfigID: "execution_mode",
+            targetConfigID: "remote_target",
+            runAsConfigID: "remote_run_as",
+            remoteEnvFileConfigID: "remote_env_file",
+            remoteBinary: "gog"),
         branding: .init(symbolName: "g.circle", accentColor: "#4285F4"),
         paths: .init(
             defaultConfig: "~/Library/Application Support/gogcli/config.json",
@@ -241,6 +248,16 @@ public enum BuiltInCrawlApps {
         capabilities: [.status, .doctor, .search],
         statusRequiresSecrets: false,
         privacy: .init(exportsSecrets: false, localOnlyScopes: ["Google account config", "OAuth token metadata"]),
+        configOptions: [
+            .init(id: "execution_mode", label: "Run location", kind: .choice, help: "Run gog on this Mac or over SSH on another machine.", defaultValue: "local", choices: ["local", "remote"]),
+            .init(id: "remote_target", label: "SSH target", help: "SSH target that can run gog.", placeholder: "user@example-host"),
+            .init(id: "remote_run_as", label: "Run as user", help: "Optional remote Unix user for sudo -u, when gog is installed under a service account.", placeholder: "service-user"),
+            .init(id: "remote_env_file", label: "Remote env file", help: "Optional env file to source before running gog on the remote host.", placeholder: "/run/service/env"),
+        ],
+        configSections: [
+            .init(id: "execution", title: "Execution", optionIDs: ["execution_mode"]),
+            .init(id: "remote", title: "Remote Host", optionIDs: ["remote_target", "remote_run_as", "remote_env_file"]),
+        ],
         install: .init(method: .homebrew, package: "openclaw/tap/gogcli"))
 
     public static let wacli = CrawlAppManifest(
@@ -248,6 +265,12 @@ public enum BuiltInCrawlApps {
         displayName: "WhatsApp",
         description: "WhatsApp linked-device message archive",
         binary: .init(name: "wacli"),
+        execution: .init(
+            kind: .local,
+            kindConfigID: "execution_mode",
+            targetConfigID: "remote_target",
+            runAsConfigID: "remote_run_as",
+            remoteBinary: "wacli"),
         branding: .init(
             symbolName: "message.circle",
             accentColor: "#25D366",
@@ -259,33 +282,61 @@ public enum BuiltInCrawlApps {
             defaultLogs: "~/.wacli/logs",
             defaultShare: "~/.wacli/share"),
         commands: [
-            "status": ["--read-only", "--json", "doctor"],
-            "doctor": ["--read-only", "--json", "doctor"],
-            "refresh": ["--json", "sync", "--once"],
-            "search": ["--read-only", "--json", "messages", "search"],
+            "status": ["--account", "{config:account}", "--read-only", "--json", "doctor"],
+            "doctor": ["--account", "{config:account}", "--read-only", "--json", "doctor"],
+            "refresh": ["--account", "{config:account}", "--json", "sync", "--once"],
+            "search": ["--account", "{config:account}", "--read-only", "--json", "messages", "search"],
         ],
         capabilities: [.status, .doctor, .refresh, .search],
         statusRequiresSecrets: false,
         privacy: .init(containsPrivateMessages: true, exportsSecrets: false, localOnlyScopes: ["WhatsApp chats", "contacts", "messages"]),
+        configOptions: [
+            .init(id: "execution_mode", label: "Run location", kind: .choice, help: "Run wacli on this Mac or over SSH on another machine.", defaultValue: "local", choices: ["local", "remote"]),
+            .init(id: "remote_target", label: "SSH target", help: "SSH target that can run wacli, for example user@example-host.", placeholder: "user@example-host"),
+            .init(id: "remote_run_as", label: "Run as user", help: "Optional remote Unix user for sudo -u, when wacli is installed under a service account.", placeholder: "crawl"),
+            .init(id: "account", label: "wacli account", help: "Optional named account from the wacli config.", placeholder: "personal"),
+        ],
+        configSections: [
+            .init(id: "execution", title: "Execution", optionIDs: ["execution_mode"]),
+            .init(id: "remote", title: "Remote Host", optionIDs: ["remote_target", "remote_run_as"]),
+            .init(id: "whatsapp", title: "WhatsApp Account", optionIDs: ["account"]),
+        ],
         install: .init(method: .homebrew, package: "openclaw/tap/wacli"))
 
     public static let birdclaw = CrawlAppManifest(
         id: Self.birdclawID,
         displayName: "X",
-        description: "X/Twitter account archive connector",
-        availability: .comingSoon,
-        binary: .init(name: "birdclaw"),
+        description: "X/Twitter connector through bird, with Birdclaw workspace support",
+        binary: .init(name: "bird"),
+        execution: .init(
+            kind: .local,
+            kindConfigID: "execution_mode",
+            targetConfigID: "remote_target",
+            runAsConfigID: "remote_run_as",
+            remoteBinary: "bird"),
         branding: .init(symbolName: "xmark", accentColor: "#111111"),
         paths: .init(
-            defaultConfig: "~/.config/birdclaw/config.toml",
-            configEnv: "BIRDCLAW_CONFIG",
-            defaultDatabase: "~/.config/birdclaw/birdclaw.db",
-            defaultCache: "~/.config/birdclaw/cache",
-            defaultLogs: "~/.config/birdclaw/logs",
-            defaultShare: "~/.config/birdclaw/share"),
-        commands: [:],
-        capabilities: [],
-        privacy: .init(exportsSecrets: false))
+            defaultConfig: "~/.birdclaw/config.json",
+            defaultDatabase: "~/.birdclaw/birdclaw.sqlite",
+            defaultCache: "~/.birdclaw/media"),
+        commands: [
+            "status": ["check", "--plain"],
+            "doctor": ["check", "--plain"],
+            "search": ["search", "-n", "10", "--json"],
+        ],
+        capabilities: [.status, .doctor, .search],
+        privacy: .init(containsPrivateMessages: true, exportsSecrets: false, localOnlyScopes: ["X archive", "DMs", "browser cookies"]),
+        configOptions: [
+            .init(id: "access_path", label: "Access path", kind: .choice, help: "Use bird first, or use Birdclaw when that host is authenticated through xurl.", defaultValue: "bird", choices: ["bird", "birdclaw"]),
+            .init(id: "execution_mode", label: "Run location", kind: .choice, help: "Run bird on this Mac or over SSH on another machine.", defaultValue: "local", choices: ["local", "remote"]),
+            .init(id: "remote_target", label: "SSH target", help: "SSH target that can run bird.", placeholder: "user@example-host"),
+            .init(id: "remote_run_as", label: "Run as user", help: "Optional remote Unix user for sudo -u, when bird is installed under a service account.", placeholder: "crawl"),
+        ],
+        configSections: [
+            .init(id: "execution", title: "Execution", optionIDs: ["access_path", "execution_mode"]),
+            .init(id: "remote", title: "Remote Host", optionIDs: ["remote_target", "remote_run_as"]),
+        ],
+        install: .init(method: .homebrew, package: "steipete/tap/bird"))
 
     public static let graincrawl = CrawlAppManifest(
         id: Self.graincrawlID,

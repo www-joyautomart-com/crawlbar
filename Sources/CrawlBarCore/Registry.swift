@@ -38,7 +38,13 @@ public struct CrawlAppRegistry: @unchecked Sendable {
             let isAvailable = manifest.availability == .available
             let enabled = isAvailable && nativeAppConfig.enabled
             guard includeDisabled || enabled else { return nil }
-            let requestedBinary = nativeAppConfig.binaryPath?.nilIfBlank ?? manifest.binary.name
+            let executionKind = manifest.executionKind(configValues: nativeAppConfig.configValues)
+            let defaultBinary = executionKind == .ssh
+                ? "ssh"
+                : Self.effectiveBinaryName(manifest: manifest, configValues: nativeAppConfig.configValues)
+            let requestedBinary = executionKind == .ssh
+                ? defaultBinary
+                : nativeAppConfig.binaryPath?.nilIfBlank ?? defaultBinary
             let resolvedBinary = isAvailable ? self.resolver.resolve(requestedBinary) : nil
             let resolvedAppConfig = includeSecrets && enabled && resolvedBinary != nil
                 ? self.configStore.appConfigWithSecrets(nativeAppConfig, manifest: manifest)
@@ -114,5 +120,15 @@ public struct CrawlAppRegistry: @unchecked Sendable {
             configValues: secretConfig.configValues,
             staleAfterSeconds: installation.staleAfterSeconds,
             enabled: installation.enabled)
+    }
+
+    private static func effectiveBinaryName(manifest: CrawlAppManifest, configValues: [String: String]) -> String {
+        guard manifest.id == BuiltInCrawlApps.birdclawID else {
+            return manifest.binary.name
+        }
+        let accessPath = (configValues["access_path"]?.nilIfBlank ?? "bird")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return accessPath == "birdclaw" ? "birdclaw" : manifest.binary.name
     }
 }
