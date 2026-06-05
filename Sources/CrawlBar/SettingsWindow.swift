@@ -681,17 +681,29 @@ struct CrawlBarSettingsView: View {
         NavigationSplitView(columnVisibility: self.animatedColumnVisibility) {
             List(selection: self.sidebarSelection) {
                 Section("CrawlBar") {
-                    Label("General", systemImage: "gearshape")
+                    CrawlBarGeneralSidebarRow(isSelected: self.model.selectedSidebarItem == .general)
                         .tag(CrawlBarSettingsSidebarItem.general as CrawlBarSettingsSidebarItem?)
+                        .contentShape(Rectangle())
+                        .listRowBackground(CrawlBarSidebarSelectionBackground(isSelected: self.model.selectedSidebarItem == .general))
+                        .onTapGesture {
+                            self.model.selectedSidebarItem = .general
+                        }
                 }
                 Section("Crawlers") {
                     ForEach(self.model.apps) { app in
+                        let item = CrawlBarSettingsSidebarItem.crawler(app.id)
                         CrawlBarSidebarRow(
                             app: app,
                             manifest: self.model.installations[app.id]?.manifest,
                             status: self.model.statuses[app.id],
-                            binaryPath: self.model.installations[app.id]?.binaryPath)
-                            .tag(CrawlBarSettingsSidebarItem.crawler(app.id) as CrawlBarSettingsSidebarItem?)
+                            binaryPath: self.model.installations[app.id]?.binaryPath,
+                            isSelected: self.model.selectedSidebarItem == item)
+                            .tag(item as CrawlBarSettingsSidebarItem?)
+                            .contentShape(Rectangle())
+                            .listRowBackground(CrawlBarSidebarSelectionBackground(isSelected: self.model.selectedSidebarItem == item))
+                            .onTapGesture {
+                                self.model.selectedSidebarItem = item
+                            }
                     }
                 }
             }
@@ -955,11 +967,40 @@ private struct CrawlBarGeneralSettingsView: View {
     }
 }
 
+struct CrawlBarGeneralSidebarRow: View {
+    let isSelected: Bool
+
+    var body: some View {
+        Label("General", systemImage: "gearshape")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(self.isSelected ? Color.white : Color.primary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct CrawlBarSidebarSelectionBackground: View {
+    let isSelected: Bool
+
+    var body: some View {
+        if self.isSelected {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.accentColor.opacity(0.82))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+        } else {
+            Color.clear
+        }
+    }
+}
+
 struct CrawlBarSidebarRow: View {
     let app: CrawlBarAppConfig
     let manifest: CrawlAppManifest?
     let status: CrawlAppStatus?
     let binaryPath: String?
+    let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 11) {
@@ -969,6 +1010,7 @@ struct CrawlBarSidebarRow: View {
                 HStack(spacing: 6) {
                     Text(CrawlBarCrawlerTitle.text(for: self.app.id, manifest: self.manifest))
                         .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(self.isSelected ? Color.white : Color.primary)
                         .lineLimit(1)
                     CrawlBarStatusDot(state: self.rowState)
                 }
@@ -979,6 +1021,7 @@ struct CrawlBarSidebarRow: View {
             }
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, 7)
         .padding(.vertical, 5)
         .opacity(self.manifest?.availability == .comingSoon ? 0.58 : 1)
     }
@@ -1004,6 +1047,11 @@ struct CrawlBarSidebarRow: View {
         }
         if self.rowState == .error {
             return self.status?.summary ?? "Error"
+        }
+        if self.rowState == .current,
+           self.status?.freshness?.status == .stale
+        {
+            return "Status current"
         }
         if let syncedAt = self.syncedAt {
             return "Synced \(CrawlBarDateText.relative(syncedAt))"
@@ -1031,13 +1079,14 @@ struct CrawlBarSidebarRow: View {
     }
 
     private var subtitleColor: Color {
+        if self.isSelected { return Color.white.opacity(0.78) }
         switch self.rowState {
         case .needsConfig, .needsAuth, .error:
-            .red
+            return Color.red
         case .stale where self.app.id == BuiltInCrawlApps.graincrawlID && self.status?.state == .error:
-            .yellow
+            return Color.yellow
         default:
-            .secondary
+            return Color.secondary
         }
     }
 }
@@ -1403,31 +1452,27 @@ struct CrawlBarAppDetailView: View {
     private var syncSettings: some View {
         CrawlBarPanel(title: "Sync") {
             VStack(alignment: .leading, spacing: 10) {
-                Toggle(isOn: self.$app.enabled) {
-                    CrawlBarOptionLabel(
-                        title: "Enable crawler",
-                        caption: "Allow CrawlBar to run actions and show live status.")
-                }
+                CrawlBarSwitchRow(
+                    title: "Enable crawler",
+                    caption: "Allow CrawlBar to run actions and show live status.",
+                    isOn: self.$app.enabled)
                     .onChange(of: self.app.enabled) { self.save() }
-                Toggle(isOn: self.$app.showInMenuBar) {
-                    CrawlBarOptionLabel(
-                        title: "Show in menu bar",
-                        caption: "Include this crawler in the menu bar status menu.")
-                }
+                CrawlBarSwitchRow(
+                    title: "Show in menu bar",
+                    caption: "Include this crawler in the menu bar status menu.",
+                    isOn: self.$app.showInMenuBar)
                     .disabled(!self.app.enabled)
                     .onChange(of: self.app.showInMenuBar) { self.save() }
-                Toggle(isOn: self.$app.autoRefreshEnabled) {
-                    CrawlBarOptionLabel(
-                        title: "Run on schedule",
-                        caption: "Refresh this crawler automatically in the background.")
-                }
+                CrawlBarSwitchRow(
+                    title: "Run on schedule",
+                    caption: "Refresh this crawler automatically in the background.",
+                    isOn: self.$app.autoRefreshEnabled)
                     .disabled(!self.app.enabled)
                     .onChange(of: self.app.autoRefreshEnabled) { self.save() }
-                Toggle(isOn: self.usesGlobalRefreshBinding) {
-                    CrawlBarOptionLabel(
-                        title: "Use default schedule",
-                        caption: "Follow the global interval from General settings.")
-                }
+                CrawlBarSwitchRow(
+                    title: "Use default schedule",
+                    caption: "Follow the global interval from General settings.",
+                    isOn: self.usesGlobalRefreshBinding)
                     .disabled(!self.app.enabled || !self.app.autoRefreshEnabled)
             }
             CrawlBarControlRow(
@@ -1516,18 +1561,16 @@ struct CrawlBarAppDetailView: View {
 
     private var gitShareSettings: some View {
         CrawlBarPanel(title: "Git Snapshot") {
-            Toggle(isOn: self.$app.shareEnabled) {
-                CrawlBarOptionLabel(
-                    title: "Manage snapshot",
-                    caption: "Keep a local Git export for this crawler's shareable data.")
-            }
+            CrawlBarSwitchRow(
+                title: "Manage snapshot",
+                caption: "Keep a local Git export for this crawler's shareable data.",
+                isOn: self.$app.shareEnabled)
                 .onChange(of: self.app.shareEnabled) { self.save() }
             if self.hasSnapshotRemote {
-                Toggle(isOn: self.$app.shareAfterRefresh) {
-                    CrawlBarOptionLabel(
-                        title: "Publish after sync",
-                        caption: "Push the snapshot after a scheduled or manual sync.")
-                }
+                CrawlBarSwitchRow(
+                    title: "Publish after sync",
+                    caption: "Push the snapshot after a scheduled or manual sync.",
+                    isOn: self.$app.shareAfterRefresh)
                     .disabled(!self.app.shareEnabled)
                     .onChange(of: self.app.shareAfterRefresh) { self.save() }
                 HStack(spacing: 8) {
@@ -2274,6 +2317,23 @@ struct CrawlBarControlRow<Content: View>: View {
     }
 }
 
+struct CrawlBarSwitchRow: View {
+    let title: String
+    let caption: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            CrawlBarOptionLabel(title: self.title, caption: self.caption)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Toggle(self.title, isOn: self.$isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+        }
+    }
+}
+
 struct CrawlBarOptionLabel: View {
     let title: String
     let caption: String
@@ -2510,6 +2570,8 @@ struct CrawlBarConfigOptionField: View {
         case .boolean:
             Toggle("", isOn: self.booleanBinding)
                 .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
         case .choice:
             Picker("Value", selection: self.$value) {
                 ForEach(self.choices, id: \.self) { choice in

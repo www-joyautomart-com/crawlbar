@@ -132,6 +132,58 @@ Actions are manifest command arrays. CrawlBar does not shell-expand them.
   Existing `wiretap` command names can stay as backward-compatible aliases, but
   new metadata should not advertise `wiretap`.
 
+## Local Or Remote Execution
+
+Most crawlers run locally. A manifest can also declare SSH execution when the
+archive lives on another machine. For user-facing built-ins, prefer a
+configurable local/remote mode so the same CrawlBar connector works on a
+laptop-only setup and a server-hosted archive:
+
+```json
+{
+  "id": "wacli-work",
+  "display_name": "WhatsApp Work",
+  "binary": { "name": "wacli" },
+  "execution": {
+    "kind": "local",
+    "kind_config_id": "execution_mode",
+    "target_config_id": "remote_target",
+    "run_as_config_id": "remote_run_as",
+    "remote_env_file_config_id": "remote_env_file",
+    "remote_binary": "wacli"
+  },
+  "commands": {
+    "status": ["--account", "{config:account}", "--read-only", "doctor", "--json"],
+    "doctor": ["--account", "{config:account}", "--read-only", "doctor", "--json"],
+    "search": ["--account", "{config:account}", "--read-only", "--json", "messages", "search"]
+  },
+  "config_options": [
+    {
+      "id": "execution_mode",
+      "label": "Run location",
+      "kind": "choice",
+      "default_value": "local",
+      "choices": ["local", "remote"]
+    },
+    {"id": "remote_target", "label": "SSH target", "placeholder": "user@example-host"},
+    {"id": "remote_run_as", "label": "Run as user", "placeholder": "crawl"},
+    {"id": "remote_env_file", "label": "Remote env file", "placeholder": "/run/service/env"},
+    {"id": "account", "label": "wacli account", "default_value": "personal"}
+  ]
+}
+```
+
+When `kind_config_id` resolves to `local`, CrawlBar resolves and runs the
+manifest binary on this Mac. When it resolves to `remote` or `ssh`, CrawlBar
+resolves local `ssh`, then runs `remote_binary` on the remote host. Command
+arguments are shell-quoted by CrawlBar. `{config:option_id}` placeholders are
+filled from crawler settings or option defaults. Missing required placeholders
+surface as setup-needed status, not as auth failures.
+
+If `remote_env_file_config_id` is set and the referenced option has a value,
+CrawlBar sources that file before executing the remote command. This supports
+server-side credentials that are already hydrated into a service env file.
+
 ## Privacy
 
 Command output is redacted before display or persistence. Logs are stored under `~/.crawlbar/logs` with private permissions.
