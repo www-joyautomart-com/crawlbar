@@ -42,4 +42,5 @@ public extension BuiltInCrawlApps {
             .init(id: "ai", title: "Embeddings", optionIDs: ["openai_api_key", "embedding_model"]),
         ],
         install: .init(method: .homebrew, package: "vincentkoc/tap/notcrawl"))
+        .withSuggestion(Self.appSuggest("Notion", ["notion.id"]))
 }

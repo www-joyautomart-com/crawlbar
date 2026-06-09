@@ -17,6 +17,7 @@ public struct CrawlAppManifest: Codable, Equatable, Sendable, Identifiable {
     public var configOptions: [CrawlAppManifest.ConfigOption]
     public var configSections: [CrawlAppManifest.ConfigSection]
     public var install: CrawlAppManifest.Install?
+    package var suggestion: CrawlAppManifest.Suggestion? = nil
 
     public init(
         schemaVersion: Int = 1,

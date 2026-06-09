@@ -42,4 +42,5 @@ public extension BuiltInCrawlApps {
             .init(id: "sync", title: "Sync", optionIDs: ["sync_limit"]),
         ],
         install: .init(method: .homebrew, package: "vincentkoc/tap/graincrawl"))
+        .withSuggestion(Self.appSuggest("Granola", ["com.granola.app"]))
 }

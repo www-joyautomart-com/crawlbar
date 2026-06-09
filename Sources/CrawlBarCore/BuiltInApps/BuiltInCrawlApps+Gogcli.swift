@@ -37,4 +37,5 @@ public extension BuiltInCrawlApps {
             .init(id: "remote", title: "Remote Host", optionIDs: ["remote_target", "remote_run_as", "remote_env_file"]),
         ],
         install: .init(method: .homebrew, package: "openclaw/tap/gogcli"))
+        .withSuggestion(Self.alwaysSuggest("Google"))
 }

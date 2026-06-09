@@ -43,4 +43,5 @@ public extension BuiltInCrawlApps {
             .init(id: "whatsapp", title: "WhatsApp Account", optionIDs: ["account"]),
         ],
         install: .init(method: .homebrew, package: "openclaw/tap/wacli"))
+        .withSuggestion(Self.appSuggest("WhatsApp", ["net.whatsapp.WhatsApp"]))
 }
