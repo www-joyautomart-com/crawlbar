@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.3.0 - 2026-06-09
+
 ### Changes
 
 - Redesign the menu bar UI with RepoBar-style native rich menu rows, branded crawler icons, status summaries, and tabbed settings.
