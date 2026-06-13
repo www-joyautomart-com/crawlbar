@@ -14,6 +14,8 @@ enum CrawlBarBrandPalette {
             NSColor(calibratedRed: 0.13, green: 0.62, blue: 0.85, alpha: 1)
         case "notcrawl":
             NSColor(calibratedWhite: 0.08, alpha: 1)
+        case "weicrawl":
+            NSColor(calibratedRed: 0.03, green: 0.76, blue: 0.38, alpha: 1)
         case "gogcli":
             NSColor(calibratedRed: 0.26, green: 0.52, blue: 0.96, alpha: 1)
         case "wacli":

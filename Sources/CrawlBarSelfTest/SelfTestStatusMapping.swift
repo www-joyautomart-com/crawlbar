@@ -301,6 +301,50 @@ extension CrawlBarSelfTest {
         let okStatus = CrawlStatusMapper().status(from: okResult, manifest: BuiltInCrawlApps.graincrawl)
         try Self.expect(okStatus.state == .current, "crawlkit ok state maps to current")
 
+        let weicrawlOutput = """
+        {
+          "archive": { "message_count": 7 },
+          "control": {
+            "schema_version": "crawlkit.control.v1",
+            "app_id": "weicrawl",
+            "state": "ok",
+            "summary": "local WeChat archive",
+            "config_path": "/tmp/weicrawl.toml",
+            "database_path": "/tmp/weicrawl.db",
+            "counts": [
+              {"id": "profiles", "label": "Profiles", "value": 1},
+              {"id": "messages", "label": "Messages", "value": 7}
+            ],
+            "databases": [
+              {
+                "id": "archive",
+                "label": "weicrawl archive",
+                "kind": "sqlite",
+                "role": "archive",
+                "path": "/tmp/weicrawl.db",
+                "is_primary": true,
+                "bytes": 200704
+              }
+            ],
+            "warnings": ["WeChat container was not found"]
+          }
+        }
+        """
+        let weicrawlResult = CrawlCommandResult(
+            appID: BuiltInCrawlApps.weicrawlID,
+            action: "status",
+            exitCode: 0,
+            stdout: weicrawlOutput,
+            stderr: "",
+            startedAt: Date(),
+            finishedAt: Date())
+        let weicrawlStatus = CrawlStatusMapper().status(from: weicrawlResult, manifest: BuiltInCrawlApps.weicrawl)
+        try Self.expect(weicrawlStatus.summary == "local WeChat archive", "weicrawl nested crawlkit summary maps")
+        try Self.expect(weicrawlStatus.counts.contains(CrawlCount(id: "messages", label: "Messages", value: 7)), "weicrawl nested crawlkit counts map")
+        try Self.expect(weicrawlStatus.databasePath == "/tmp/weicrawl.db", "weicrawl nested crawlkit database maps")
+        try Self.expect(weicrawlStatus.databases.first?.label == "weicrawl archive", "weicrawl nested crawlkit database resources map")
+        try Self.expect(weicrawlStatus.warnings == ["WeChat container was not found"], "weicrawl nested crawlkit warnings map")
+
         let failedOutput = """
         {"schema_version":"crawlkit.control.v1","app_id":"graincrawl","state":"failed","summary":"broken"}
         """

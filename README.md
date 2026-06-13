@@ -18,6 +18,7 @@ Built-in manifests ship for:
 - `telecrawl`
 - `imsgcrawl`
 - `photoscrawl` (coming soon)
+- `weicrawl`
 - `notcrawl`
 - `gogcli` through the `gog` executable
 - `wacli`
