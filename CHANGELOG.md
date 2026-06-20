@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## v0.4.0 - 2026-06-19
 
 ### Changes
 
+- Add iMessage as a built-in crawler with status, refresh, search, privacy metadata, and native Messages branding.
 - Add Apple Photos as a coming-soon built-in crawler with read-only status, initialization, search, and platform-native storage paths.
+- Add development binary registration commands for testing local crawler builds in CrawlBar.
 
 ### Fixes
 
