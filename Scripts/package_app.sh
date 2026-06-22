@@ -4,16 +4,18 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$DIST_DIR/CrawlBar.app"
-CONTENTS_DIR="$APP_DIR/Contents"
+STAGING_APP_DIR="$DIST_DIR/.CrawlBar.app.tmp.$$"
+CONTENTS_DIR="$STAGING_APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 HELPERS_DIR="$CONTENTS_DIR/Helpers"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 
 cd "$ROOT_DIR"
-swift build -c release --product CrawlBar
-swift build -c release --product crawlbarctl
+swift build -c release --product CrawlBar >&2
+swift build -c release --product crawlbarctl >&2
 
-rm -rf "$APP_DIR"
+rm -rf "$STAGING_APP_DIR"
+trap 'rm -rf "$STAGING_APP_DIR"' EXIT
 mkdir -p "$MACOS_DIR" "$HELPERS_DIR" "$RESOURCES_DIR"
 
 cp ".build/release/CrawlBar" "$MACOS_DIR/CrawlBar"
@@ -61,7 +63,9 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 PLIST
 
 if command -v codesign >/dev/null 2>&1; then
-  codesign --force --deep --sign - "$APP_DIR" >/dev/null
+  codesign --force --deep --sign - "$STAGING_APP_DIR" >/dev/null
 fi
 
+rm -rf "$APP_DIR"
+mv "$STAGING_APP_DIR" "$APP_DIR"
 echo "$APP_DIR"

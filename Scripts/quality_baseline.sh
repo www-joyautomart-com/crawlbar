@@ -84,19 +84,19 @@ rg -n 'import (AppKit|SwiftUI)' Sources/CrawlBarCore || true
 
 section "Production Effect/Platform References" \
   "process, filesystem, AppKit, UserDefaults, and task ownership should sit in intentional boundaries"
-rg -n 'Process\(|FileManager\.|NSWorkspace|NSApp|NSWindow|NSMenu|NSStatus|UserDefaults|Task\s*\{' Sources/CrawlBar Sources/CrawlBarCore Sources/CrawlBarCLI Sources/CrawlBarSelfTest \
-  | rg -v '^Sources/CrawlBarSelfTest/' \
+{ rg -n 'Process\(|FileManager\.|NSWorkspace|NSApp|NSWindow|NSMenu|NSStatus|UserDefaults|Task\s*\{' Sources/CrawlBar Sources/CrawlBarCore Sources/CrawlBarCLI Sources/CrawlBarSelfTest \
+  | rg -v '^Sources/CrawlBarSelfTest/' || true; } \
   | sed -n '1,200p'
 
 section "SelfTest Effect/Platform References" \
   "test harnesses are allowed more effects, but the count shows how broad the proof surface is"
-rg -n 'Process\(|FileManager\.|NSWorkspace|NSApp|NSWindow|NSMenu|NSStatus|UserDefaults|Task\s*\{' Sources/CrawlBarSelfTest \
+(rg -n 'Process\(|FileManager\.|NSWorkspace|NSApp|NSWindow|NSMenu|NSStatus|UserDefaults|Task\s*\{' Sources/CrawlBarSelfTest || true) \
   | wc -l \
   | awk '{ print "references=" $1 }'
 
 section "UI Candidate Types By Folder" \
   "shows where SwiftUI/AppKit concepts cluster so UI decomposition does not create one-off primitives everywhere"
-rg -n '^(struct|class|enum|protocol) .*(: .*View|View\b|Window|Menu|Sidebar|Panel|Row|Header|Section|Controls|Icon|Status|Settings)' Sources/CrawlBar \
+{ rg -n '^(struct|class|enum|protocol) .*(: .*View|View\b|Window|Menu|Sidebar|Panel|Row|Header|Section|Controls|Icon|Status|Settings)' Sources/CrawlBar || true; } \
   | awk -F: '{ print $1 }' \
   | awk -F/ '{ print $1 "/" $2 "/" $3 }' \
   | sort \
@@ -105,7 +105,7 @@ rg -n '^(struct|class|enum|protocol) .*(: .*View|View\b|Window|Menu|Sidebar|Pane
 
 section "Settings Surface Count" \
   "counts user-facing controls; high counts mean the simple menubar app may be carrying too many knobs"
-rg -n 'CrawlBarPanel|CrawlBarSwitchRow|CrawlBarControlRow|Button\s*\{|TextField|Picker' Sources/CrawlBar/Settings \
+{ rg -n 'CrawlBarPanel|CrawlBarSwitchRow|CrawlBarControlRow|Button\s*\{|TextField|Picker' Sources/CrawlBar/Settings || true; } \
   | awk '
     /CrawlBarPanel/ { panels++ }
     /CrawlBarSwitchRow/ { switches++ }
