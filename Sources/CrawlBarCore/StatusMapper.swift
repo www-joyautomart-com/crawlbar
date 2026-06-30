@@ -44,6 +44,8 @@ public struct CrawlStatusMapper: Sendable {
                 status = self.telecrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             case BuiltInCrawlApps.notcrawlID:
                 status = self.notcrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
+            case BuiltInCrawlApps.weicrawlID:
+                status = self.weicrawlStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             case BuiltInCrawlApps.gogcliID:
                 status = self.gogcliStatus(object, result: result, staleAfterSeconds: staleAfterSeconds)
             case BuiltInCrawlApps.wacliID:

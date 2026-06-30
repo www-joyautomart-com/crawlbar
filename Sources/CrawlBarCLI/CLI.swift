@@ -192,9 +192,15 @@ enum CrawlBarCLI {
         _ = try? CrawlActionLogStore().save(result)
         if json {
             try CLIOutput.writeJSON(result)
+            if !result.succeeded {
+                Foundation.exit(Int32(result.exitCode))
+            }
             return
         }
         print(result.stdout.nilIfBlank ?? result.stderr.nilIfBlank ?? "installed \(installation.manifest.binary.name)")
+        if !result.succeeded {
+            Foundation.exit(Int32(result.exitCode))
+        }
     }
 
     private static func query(registry: CrawlAppRegistry, runner: CrawlCommandRunner, options: CLIOptions) throws {

@@ -28,6 +28,7 @@
 - Fix Settings sidebar clicks so selecting crawler rows reliably updates the detail pane, and show the active sidebar selection clearly.
 - Normalize crawler command environments with `HOME` so launchd-started menu bar status matches terminal status for tools like `gog`.
 - Add Telecrawl as a built-in Telegram crawler with status, import, doctor, search, privacy, install metadata, and branded menu icon support.
+- Add Weicrawl as a built-in Weixin/WeChat crawler with status, desktop snapshot import, unlock status, search, export, privacy, install metadata, and native WeChat icon support.
 - Make menu and settings opening faster by caching rendered crawler icons, coalescing status menu rebuilds, and avoiding synchronous refresh work during settings presentation.
 - Add CrawlBar support for Cloudflare remote crawler archives, including built-in `remote status`, `remote archives`, and compressed SQLite `cloud publish` actions for `gitcrawl` and `discrawl`.
 - Surface Cloudflare D1/R2 archive status, remote archive metadata, and gzip chunked SQLite bundle details in normalized status JSON and the settings UI.

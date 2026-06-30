@@ -19,7 +19,12 @@ public struct CrawlActionLogStore: @unchecked Sendable {
         let timestamp = ISO8601DateFormatter.crawlBarFormatter()
             .string(from: result.finishedAt)
             .replacingOccurrences(of: ":", with: "-")
-        let filename = "\(result.appID.rawValue)-\(result.action)-\(timestamp).json"
+        let filename = [
+            Self.safeFilenameComponent(result.appID.rawValue, fallback: "app"),
+            Self.safeFilenameComponent(result.action, fallback: "action"),
+            timestamp,
+            UUID().uuidString,
+        ].joined(separator: "-") + ".json"
         let url = self.directoryURL.appendingPathComponent(filename)
         let data = try CrawlCoding.makeJSONEncoder().encode(result)
         try data.write(to: url, options: [.atomic])
@@ -62,5 +67,16 @@ public struct CrawlActionLogStore: @unchecked Sendable {
 
     private func modificationDate(_ url: URL) -> Date {
         ((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate) ?? .distantPast
+    }
+
+    private static func safeFilenameComponent(_ value: String, fallback: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        let scalars = value.unicodeScalars.map { scalar -> Character in
+            allowed.contains(scalar) ? Character(scalar) : "-"
+        }
+        let safe = String(scalars)
+            .split(separator: "-", omittingEmptySubsequences: true)
+            .joined(separator: "-")
+        return safe.nilIfBlank ?? fallback
     }
 }

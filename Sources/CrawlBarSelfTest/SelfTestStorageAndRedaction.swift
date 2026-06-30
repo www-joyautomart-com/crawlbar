@@ -21,6 +21,33 @@ extension CrawlBarSelfTest {
         let recent = store.recentResults(limit: 5)
         try Self.expect(recent.first == result, "action logs decode back into recent command results")
 
+        let duplicateTimestampResult = CrawlCommandResult(
+            appID: result.appID,
+            action: result.action,
+            exitCode: 0,
+            stdout: "second",
+            stderr: "",
+            startedAt: result.startedAt,
+            finishedAt: result.finishedAt)
+        _ = try store.save(duplicateTimestampResult)
+        let duplicateTimestampLogs = store.recentResults(limit: 5)
+        try Self.expect(duplicateTimestampLogs.contains(result), "duplicate action timestamps preserve the first log")
+        try Self.expect(duplicateTimestampLogs.contains(duplicateTimestampResult), "duplicate action timestamps preserve the second log")
+
+        let unsafeResult = CrawlCommandResult(
+            appID: CrawlAppID(rawValue: "../unsafe/app"),
+            action: "../refresh:now",
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+            startedAt: Date(timeIntervalSince1970: 1_775_000_001),
+            finishedAt: Date(timeIntervalSince1970: 1_775_000_001))
+        let unsafeURL = try store.save(unsafeResult)
+        try Self.expect(
+            unsafeURL.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL,
+            "unsafe action log identifiers stay inside the log directory")
+        try Self.expect(!unsafeURL.lastPathComponent.contains("/"), "unsafe action log identifiers are filename-safe")
+
         let successfulJSONResult = CrawlCommandResult(
             appID: BuiltInCrawlApps.graincrawlID,
             action: "refresh",
